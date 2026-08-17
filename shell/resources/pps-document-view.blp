@@ -207,6 +207,29 @@ template $PpsDocumentView: Adw.BreakpointBin {
         }
 
         [end]
+        MenuButton zoom_button {
+          styles [
+            "flat",
+          ]
+
+          tooltip-text: _("Zoom Level");
+
+          child: Box {
+            spacing: 4;
+
+            Label zoom_label {
+              /* wide enough for "100.0%" so the header does not jitter */
+              width-chars: 6;
+              xalign: 1.0;
+            }
+
+            Image {
+              icon-name: "pan-down-symbolic";
+            }
+          };
+        }
+
+        [end]
         $PpsPageSelector page_selector {
           model: "model";
           tooltip-text: _("Page Count");
@@ -818,6 +841,28 @@ menu sidebar_menu {
     item {
       label: _("_About Document Viewer");
       action: "app.about";
+    }
+  }
+}
+
+menu zoom_fit_menu {
+  section {
+    item {
+      label: _("Fit _Page");
+      action: "doc.sizing-mode";
+      target: "fit-page";
+    }
+
+    item {
+      label: _("Fit _Width");
+      action: "doc.sizing-mode";
+      target: "fit-width";
+    }
+
+    item {
+      label: _("_Automatic");
+      action: "doc.sizing-mode";
+      target: "automatic";
     }
   }
 }

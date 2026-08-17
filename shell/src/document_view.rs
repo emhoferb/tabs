@@ -55,6 +55,12 @@ mod imp {
         #[template_child]
         pub(super) zoom_fit_best_revealer: TemplateChild<gtk::Revealer>,
         #[template_child]
+        pub(super) zoom_label: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub(super) zoom_button: TemplateChild<gtk::MenuButton>,
+        #[template_child]
+        pub(super) zoom_fit_menu: TemplateChild<gio::Menu>,
+        #[template_child]
         pub(super) banner: TemplateChild<adw::Banner>,
 
         #[template_child]
@@ -257,6 +263,7 @@ mod imp {
         fn constructed(&self) {
             self.parent_constructed();
 
+            self.setup_zoom_menu();
             self.sidebar_was_open_before_find.set(true);
 
             let page_cache_mb = self.settings.uint(GS_PAGE_CACHE_SIZE) as usize;
@@ -333,6 +340,37 @@ mod imp {
     impl WidgetImpl for PpsDocumentView {}
 
     impl PpsDocumentView {
+        /// Assemble the zoom menu: the fit modes come from the template, the
+        /// percentage presets are built here because Blueprint cannot express
+        /// a double-typed action target.
+        fn setup_zoom_menu(&self) {
+            const PRESETS: [(&str, f64); 10] = [
+                ("50%", 0.5),
+                ("70%", 0.7071067811865475),
+                ("85%", 0.8408964152537145),
+                ("100%", 1.0),
+                ("125%", 1.189207115002721),
+                ("150%", 1.414213562373095),
+                ("175%", 1.681792830507429),
+                ("200%", 2.0),
+                ("300%", 2.828427124746190),
+                ("400%", 4.0),
+            ];
+
+            let menu = gio::Menu::new();
+            menu.append_section(None, &*self.zoom_fit_menu);
+
+            let presets = gio::Menu::new();
+            for (label, scale) in PRESETS {
+                let item = gio::MenuItem::new(Some(label), None);
+                item.set_action_and_target_value(Some("doc.zoom"), Some(&scale.to_variant()));
+                presets.append_item(&item);
+            }
+            menu.append_section(None, &presets);
+
+            self.zoom_button.set_menu_model(Some(&menu));
+        }
+
         pub(super) fn file(&self) -> Option<gio::File> {
             self.file.borrow().clone()
         }

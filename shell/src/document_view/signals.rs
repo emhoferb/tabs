@@ -671,12 +671,29 @@ impl imp::PpsDocumentView {
     }
 
     // model
+    /// Percentage shown in the header. The model's scale is in view units, so
+    /// it is converted back to a document-relative zoom the same way the
+    /// metadata is, otherwise the number drifts with the display DPI.
+    pub fn update_zoom_label(&self, model: &DocumentModel) {
+        if self.is_empty() {
+            self.zoom_label.set_label("");
+            return;
+        }
+
+        let dpi = Document::misc_get_widget_dpi(self.obj().as_ref());
+        let percent = model.scale() * 72. / dpi * 100.;
+
+        self.zoom_label
+            .set_label(&format!("{:.0}%", percent.round()));
+    }
+
     #[template_callback]
     pub fn zoom_changed(&self, _: glib::ParamSpec, model: DocumentModel) {
         let is_free = model.sizing_mode() == SizingMode::Free;
 
         self.set_action_enabled("zoom-in", self.view.can_zoom_in());
         self.set_action_enabled("zoom-out", self.view.can_zoom_out());
+        self.update_zoom_label(&model);
 
         if let Some(metadata) = self.metadata() {
             if is_free && !self.is_empty() {
@@ -690,6 +707,8 @@ impl imp::PpsDocumentView {
 
     #[template_callback]
     pub fn sizing_mode_changed(&self, _: glib::ParamSpec, model: DocumentModel) {
+        self.update_zoom_label(&model);
+
         let hscrollbar_policy = if model.sizing_mode() == SizingMode::Free {
             gtk::PolicyType::Automatic
         } else {

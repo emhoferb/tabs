@@ -249,6 +249,11 @@ impl imp::PpsDocumentView {
 
         self.set_document_metadata();
 
+        /* The zoom readout is driven by notify::scale, which has usually
+         * already fired by the time a document arrives, so refresh it here
+         * too or the header stays blank until the user zooms. */
+        self.update_zoom_label(&self.model);
+
         let Some(document) = document else {
             return;
         };
