@@ -296,3 +296,13 @@ listview.pps-outline > row > treeexpander {
 listview.pps-outline > row > treeexpander > box {
   min-height: 0;
 }
+
+/* Sidebar drag handle. Wider than a hairline so it can actually be grabbed,
+ * but drawn as a plain separator so it reads as an edge rather than a control. */
+.pps-sidebar-resizer {
+  min-width: 5px;
+}
+
+.pps-sidebar-resizer:hover {
+  background-color: alpha(currentColor, 0.25);
+}

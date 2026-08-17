@@ -688,6 +688,33 @@ impl imp::PpsDocumentView {
     }
 
     #[template_callback]
+    pub fn sidebar_resize_begin(&self, _x: f64, _y: f64, _g: &gtk::GestureDrag) {
+        self.sidebar_drag_start_width
+            .set(self.sidebar_box.width());
+    }
+
+    /// AdwOverlaySplitView sizes its sidebar from a fraction of the total
+    /// width, so a drag is applied by recomputing that fraction. The result is
+    /// clamped to the split view's own min/max so the handle cannot be dragged
+    /// somewhere the widget would refuse to render.
+    #[template_callback]
+    pub fn sidebar_resize_update(&self, offset_x: f64, _offset_y: f64, _g: &gtk::GestureDrag) {
+        let total = self.split_view.width();
+        if total <= 0 {
+            return;
+        }
+
+        let wanted = (self.sidebar_drag_start_width.get() as f64 + offset_x)
+            .clamp(
+                self.split_view.min_sidebar_width(),
+                self.split_view.max_sidebar_width(),
+            );
+
+        self.split_view
+            .set_sidebar_width_fraction(wanted / total as f64);
+    }
+
+    #[template_callback]
     pub fn zoom_changed(&self, _: glib::ParamSpec, model: DocumentModel) {
         let is_free = model.sizing_mode() == SizingMode::Free;
 

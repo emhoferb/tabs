@@ -61,6 +61,10 @@ mod imp {
         #[template_child]
         pub(super) zoom_fit_menu: TemplateChild<gio::Menu>,
         #[template_child]
+        pub(super) sidebar_box: TemplateChild<gtk::Box>,
+        /// Sidebar width when the current resize drag started, in pixels.
+        pub(super) sidebar_drag_start_width: Cell<i32>,
+        #[template_child]
         pub(super) banner: TemplateChild<adw::Banner>,
 
         #[template_child]
