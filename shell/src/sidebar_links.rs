@@ -832,15 +832,15 @@ mod imp {
             item: &gtk::ListItem,
             _factory: &gtk::SignalListItemFactory,
         ) {
+            // One line per entry, ellipsized, as Evince 46 had it: an outline
+            // is a scanning aid, so fitting more of it on screen matters more
+            // than showing every title in full. The full text stays reachable
+            // through the tooltip.
             let outline = gtk::Label::builder()
                 .xalign(0.0)
                 .ellipsize(gtk::pango::EllipsizeMode::End)
                 .hexpand(true)
-                .wrap(true)
-                .wrap_mode(gtk::pango::WrapMode::WordChar)
-                .lines(3)
-                .margin_top(6)
-                .margin_bottom(6)
+                .single_line_mode(true)
                 .has_tooltip(true)
                 .build();
 

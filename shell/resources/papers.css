@@ -280,3 +280,19 @@ window.pps-annotation-window textview {
 .dotbox:disabled {
     background-color: transparent;
 }
+
+/* Outline sidebar: Evince 46 fitted roughly twice as many entries on screen
+ * as libadwaita's default navigation-sidebar padding allows. Tighten the rows
+ * and the per-level indent so a long table of contents stays scannable. */
+listview.pps-outline > row {
+  padding: 0;
+  min-height: 0;
+}
+
+listview.pps-outline > row > treeexpander {
+  padding: 1px 2px;
+}
+
+listview.pps-outline > row > treeexpander > box {
+  min-height: 0;
+}
