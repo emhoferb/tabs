@@ -65,6 +65,20 @@ typedef struct
 	PpsLink *link;
 	gint source_page;
 	guint delay_timeout_id;
+	guint dest_page;
+
+	/* Set once the preview has been pinned with the secondary button. A
+	 * pinned preview holds a live PpsView instead of a thumbnail, and is
+	 * only torn down explicitly. */
+	gboolean pinned;
+	PpsView *view;
+
+	/* A popover that has been replaced and is waiting to be dropped once we
+	 * are out of event dispatch. Owned here so that disposal cannot leave it
+	 * parented to a dead view. */
+	GtkWidget *retired_popover;
+	guint retire_idle_id;
+	guint cleanup_idle_id;
 } PpsLinkPreview;
 
 typedef struct
@@ -181,6 +195,10 @@ typedef struct _PpsViewPrivate {
 
 	/* Widgets Factory */
 	PpsElementWidgetFactory *widget_factories[WIDGET_FACTORY_COUNT];
+
+	/* TRUE when this view is itself the child of a pinned link preview.
+	 * Such a view never spawns previews of its own. */
+	gboolean is_link_preview;
 } PpsViewPrivate;
 
 struct _PpsViewClass {

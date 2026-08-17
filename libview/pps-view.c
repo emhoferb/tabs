@@ -131,6 +131,9 @@ static PpsLink *pps_view_get_link_at_location (PpsView *view,
 static char *tip_from_link (PpsView *view,
                             PpsLink *link);
 static void pps_view_link_preview_popover_cleanup (PpsView *view);
+static void link_preview_destroy (PpsView *view);
+static void link_preview_pin (PpsView *view);
+static void link_preview_drop_retired (PpsView *view);
 static void get_link_area (PpsView *view,
                            gint page,
                            PpsLink *link,
@@ -2222,6 +2225,11 @@ handle_link_preview (PpsView *view)
 	gdouble device_scale = 1;
 	PpsLink *link = priv->link_preview.link;
 
+	/* Previews inside a preview would nest without bound, and a pinned
+	 * preview stays until it is dismissed. */
+	if (priv->is_link_preview || priv->link_preview.pinned)
+		return G_SOURCE_REMOVE;
+
 	pps_view_link_preview_popover_cleanup (view);
 
 	if (!link)
@@ -2276,6 +2284,7 @@ handle_link_preview (PpsView *view)
 	                                        &link_dest_doc, &link_dest_x, &link_dest_y);
 	priv->link_preview.left = link_dest_x;
 	priv->link_preview.top = link_dest_y;
+	priv->link_preview.dest_page = link_dest_page;
 
 	page_texture = pps_pixbuf_cache_get_texture (priv->pixbuf_cache, link_dest_page);
 
@@ -3774,31 +3783,27 @@ get_link_area (PpsView *view,
 	                                link, area);
 }
 
+/* Work out how large the popup should be, and which point of the destination
+ * page belongs in its top left corner. Shared by the hover thumbnail and the
+ * pinned live view so that pinning does not shift what the reader is looking
+ * at. pwidth/pheight are the destination page dimensions, in the same pixel
+ * space as link_preview.left/top.
+ */
 static void
-link_preview_set_thumbnail (GdkTexture *page_texture,
-                            PpsView *view)
+link_preview_compute_geometry (PpsView *view,
+                               gint pwidth,
+                               gint pheight,
+                               gint *width,
+                               gint *height,
+                               gint *left,
+                               gint *top)
 {
 	PpsViewPrivate *priv = GET_PRIVATE (view);
-	GtkWidget *popover = priv->link_preview.popover;
-	GtkWidget *picture;
-	GtkSnapshot *snapshot;
 	gdouble x, y;         /* position of the link on destination page */
-	gint pwidth, pheight; /* dimensions of destination page */
 	gint vwidth, vheight; /* dimensions of main view */
-	gint width, height;   /* dimensions of popup */
-	gint left, top;
-	gdouble scale;
-	GtkNative *native = gtk_widget_get_native (GTK_WIDGET (view));
-	gdouble fractional_scale = gdk_surface_get_scale (gtk_native_get_surface (native));
-	g_autoptr (GdkPaintable) paintable = NULL;
-
-	scale = gdk_surface_get_scale (gtk_native_get_surface (gtk_widget_get_native (GTK_WIDGET (view))));
 
 	x = priv->link_preview.left;
 	y = priv->link_preview.top;
-
-	pwidth = (gint) gdk_texture_get_width (page_texture) / scale;
-	pheight = (gint) gdk_texture_get_height (page_texture) / scale;
 
 	vwidth = gtk_widget_get_width (GTK_WIDGET (view));
 	vheight = gtk_widget_get_height (GTK_WIDGET (view));
@@ -3809,8 +3814,8 @@ link_preview_set_thumbnail (GdkTexture *page_texture,
 	 * of the main view. The idea is avoid the popup dominte the main view,
 	 * and the reader can see context both in the popup and the main page.
 	 */
-	width = MIN (pwidth, vwidth);
-	height = MIN (pheight, (int) (vheight * LINK_PREVIEW_PAGE_RATIO));
+	*width = MIN (pwidth, vwidth);
+	*height = MIN (pheight, (int) (vheight * LINK_PREVIEW_PAGE_RATIO));
 
 	/* Position on the destination page that will be in the top left
 	 * corner of the popup. We choose the link destination to be centered
@@ -3824,12 +3829,37 @@ link_preview_set_thumbnail (GdkTexture *page_texture,
 	 * caption below the figure, so seeing a little of the figure above is
 	 * often enough to remind the reader of the rest of the figure.
 	 */
-	left = x - width * LINK_PREVIEW_HORIZONTAL_LINK_POS;
-	top = y - height * LINK_PREVIEW_VERTICAL_LINK_POS;
+	*left = x - *width * LINK_PREVIEW_HORIZONTAL_LINK_POS;
+	*top = y - *height * LINK_PREVIEW_VERTICAL_LINK_POS;
 
 	/* link preview destination should stay within the destination page: */
-	left = MIN (MAX (0, left), pwidth - width);
-	top = MIN (MAX (0, top), pheight - height);
+	*left = MIN (MAX (0, *left), pwidth - *width);
+	*top = MIN (MAX (0, *top), pheight - *height);
+}
+
+static void
+link_preview_set_thumbnail (GdkTexture *page_texture,
+                            PpsView *view)
+{
+	PpsViewPrivate *priv = GET_PRIVATE (view);
+	GtkWidget *popover = priv->link_preview.popover;
+	GtkWidget *picture;
+	GtkSnapshot *snapshot;
+	gint pwidth, pheight; /* dimensions of destination page */
+	gint width, height;   /* dimensions of popup */
+	gint left, top;
+	gdouble scale;
+	GtkNative *native = gtk_widget_get_native (GTK_WIDGET (view));
+	gdouble fractional_scale = gdk_surface_get_scale (gtk_native_get_surface (native));
+	g_autoptr (GdkPaintable) paintable = NULL;
+
+	scale = gdk_surface_get_scale (gtk_native_get_surface (gtk_widget_get_native (GTK_WIDGET (view))));
+
+	pwidth = (gint) gdk_texture_get_width (page_texture) / scale;
+	pheight = (gint) gdk_texture_get_height (page_texture) / scale;
+
+	link_preview_compute_geometry (view, pwidth, pheight,
+	                               &width, &height, &left, &top);
 
 	snapshot = gtk_snapshot_new ();
 	gtk_snapshot_push_clip (snapshot, &GRAPHENE_RECT_INIT (0, 0, width, height));
@@ -3850,6 +3880,327 @@ link_preview_set_thumbnail (GdkTexture *page_texture,
 	picture = gtk_picture_new_for_paintable (paintable);
 	gtk_widget_set_size_request (popover, width, height);
 	gtk_popover_set_child (GTK_POPOVER (popover), picture);
+}
+
+typedef struct {
+	PpsView *preview;
+	guint dest_page;
+	gboolean page_applied;
+	gdouble left;
+	gdouble top;
+	guint frames_left;
+} LinkPreviewScroll;
+
+/* Applies the crop offsets to the pinned preview. Tick callbacks run before
+ * layout, so on the first frame the adjustments still carry an empty range and
+ * setting a value would just clamp to zero; retry until the view underneath has
+ * been allocated. A page that fits entirely never grows a scroll range, so give
+ * up after a few frames rather than spinning for the life of the popover.
+ */
+static gboolean
+link_preview_scroll_to_dest_cb (GtkWidget *widget,
+                                GdkFrameClock *frame_clock,
+                                gpointer user_data)
+{
+	GtkScrolledWindow *swindow = GTK_SCROLLED_WINDOW (widget);
+	LinkPreviewScroll *target = user_data;
+	GtkAdjustment *hadj, *vadj;
+	gboolean scrolled = FALSE;
+
+	/* The page cannot be applied while building the view: PpsView reaches a
+	 * page by scrolling to it, and until the view is inside a container and
+	 * allocated its adjustments have no range, so the scroll is dropped and
+	 * the view settles on page 0. Setting it again later would be a no-op
+	 * because the model already holds the value and emits no signal, so the
+	 * model is deliberately left on page 0 until here. */
+	if (!target->page_applied) {
+		PpsViewPrivate *pp = GET_PRIVATE (target->preview);
+
+		if (!gtk_widget_get_mapped (GTK_WIDGET (target->preview)))
+			return G_SOURCE_CONTINUE;
+
+		pps_document_model_set_page (pp->model, target->dest_page);
+		target->page_applied = TRUE;
+
+		/* Let the page change settle before applying the crop offsets. */
+		return G_SOURCE_CONTINUE;
+	}
+
+	hadj = gtk_scrolled_window_get_hadjustment (swindow);
+	vadj = gtk_scrolled_window_get_vadjustment (swindow);
+
+	/* left/top are page-relative, in the same rotated-and-scaled space the
+	 * thumbnail crop used. The view's scrollable area is not the bare page
+	 * though: PpsView lays pages out with a border and priv->spacing around
+	 * them, so scrolling straight to left/top lands a constant offset away
+	 * from what the thumbnail showed. Add the page's own origin to line the
+	 * two up exactly. */
+	{
+		GdkRectangle page_area;
+
+		pps_view_get_page_extents (target->preview, target->dest_page, &page_area);
+
+		if (hadj && gtk_adjustment_get_upper (hadj) > gtk_adjustment_get_page_size (hadj)) {
+			gtk_adjustment_set_value (hadj, page_area.x + target->left);
+			scrolled = TRUE;
+		}
+		if (vadj && gtk_adjustment_get_upper (vadj) > gtk_adjustment_get_page_size (vadj)) {
+			gtk_adjustment_set_value (vadj, page_area.y + target->top);
+			scrolled = TRUE;
+		}
+	}
+
+	if (scrolled || target->frames_left-- == 0)
+		return G_SOURCE_REMOVE;
+
+	return G_SOURCE_CONTINUE;
+}
+
+static gboolean
+link_preview_copy_cb (GtkWidget *widget,
+                      GVariant *args,
+                      gpointer user_data)
+{
+	pps_view_copy (PPS_VIEW (widget));
+
+	return TRUE;
+}
+
+static gboolean
+link_preview_deferred_cleanup (gpointer data)
+{
+	PpsView *view = data;
+	PpsViewPrivate *priv = GET_PRIVATE (view);
+
+	priv->link_preview.cleanup_idle_id = 0;
+	pps_view_link_preview_popover_cleanup (view);
+
+	return G_SOURCE_REMOVE;
+}
+
+static void
+link_preview_popover_closed (GtkPopover *popover,
+                             PpsView *view)
+{
+	PpsViewPrivate *priv = GET_PRIVATE (view);
+
+	/* Clicking outside an autohide popover dismisses it; that is also how a
+	 * pinned preview is unpinned. Drop the pin first so the teardown is not
+	 * short-circuited by pps_view_link_preview_popover_cleanup().
+	 *
+	 * Defer the teardown itself: "closed" is emitted while GTK is still
+	 * dispatching the click that dismissed the popover, and unparenting the
+	 * widget from inside that dispatch leaves a dangling pointer grab. */
+	priv->link_preview.pinned = FALSE;
+
+	if (priv->link_preview.cleanup_idle_id == 0)
+		priv->link_preview.cleanup_idle_id =
+		    g_idle_add (link_preview_deferred_cleanup, view);
+}
+
+/* Drops a popover that has been replaced by another one. The widget is owned by
+ * link_preview.retired_popover rather than by the idle, so that disposing the
+ * view cannot leave it parented to a dead parent. */
+static void
+link_preview_drop_retired (PpsView *view)
+{
+	PpsViewPrivate *priv = GET_PRIVATE (view);
+	GtkWidget *popover;
+
+	if (!priv->link_preview.retired_popover)
+		return;
+
+	popover = g_steal_pointer (&priv->link_preview.retired_popover);
+	gtk_popover_popdown (GTK_POPOVER (popover));
+	gtk_widget_unparent (popover);
+}
+
+static gboolean
+link_preview_drop_retired_cb (gpointer data)
+{
+	PpsView *view = data;
+	PpsViewPrivate *priv = GET_PRIVATE (view);
+
+	priv->link_preview.retire_idle_id = 0;
+	link_preview_drop_retired (view);
+
+	return G_SOURCE_REMOVE;
+}
+
+/* Swap the static thumbnail for a live PpsView on the destination page.
+ *
+ * The thumbnail is a plain texture and therefore has no text layer, so nothing
+ * in it can be selected. A real PpsView brings selection, drag-to-mark and copy
+ * along for free. It is only built on an explicit pin because standing up a
+ * second view with its own model and page cache is far too expensive to do on
+ * every hover.
+ */
+static void
+link_preview_pin (PpsView *view)
+{
+	PpsViewPrivate *priv = GET_PRIVATE (view);
+	PpsViewPrivate *preview_priv;
+	GtkWidget *popover = priv->link_preview.popover;
+	GtkWidget *pinned, *swindow;
+	GtkEventController *shortcuts;
+	LinkPreviewScroll *scroll_target;
+	PpsDocumentModel *model;
+	PpsAnnotationModel *annot_model;
+	PpsAnnotationsContext *annots_context;
+	PpsSearchContext *search_context;
+	PpsDocument *document;
+	PpsView *preview;
+	GdkRectangle pointing_to;
+	gdouble doc_width, doc_height, scale;
+	gint pwidth, pheight;
+	gint width, height, left, top;
+	gint rotation;
+
+
+	if (!popover || priv->link_preview.pinned)
+		return;
+
+	priv->link_preview.pinned = TRUE;
+
+	/* Any thumbnail still in flight is now unwanted, and the hover delay
+	 * should not hold the pinned preview back. */
+	if (priv->link_preview.job) {
+		pps_job_cancel (priv->link_preview.job);
+		g_clear_object (&priv->link_preview.job);
+	}
+	g_clear_handle_id (&priv->link_preview.delay_timeout_id, g_source_remove);
+
+	document = pps_document_model_get_document (priv->model);
+	scale = pps_document_model_get_scale (priv->model);
+	rotation = pps_document_model_get_rotation (priv->model);
+
+	pps_document_get_page_size (document, priv->link_preview.dest_page,
+	                            &doc_width, &doc_height);
+
+	/* link_preview.left/top are in rotated, scaled view space, so the page
+	 * dimensions have to be brought into the same space to match. */
+	if (rotation == 90 || rotation == 270) {
+		pwidth = (gint) (doc_height * scale);
+		pheight = (gint) (doc_width * scale);
+	} else {
+		pwidth = (gint) (doc_width * scale);
+		pheight = (gint) (doc_height * scale);
+	}
+
+	link_preview_compute_geometry (view, pwidth, pheight,
+	                               &width, &height, &left, &top);
+
+	/* Mirror how PpsDocumentView brings a view up: attach an empty model,
+	 * wire the contexts, and only then hand it a document. Attaching a model
+	 * that already carries one makes set_model() run setup_caches()
+	 * immediately, which feeds priv->annots_context into the element widget
+	 * factories while it is still NULL. */
+	/* Neither pps_document_model_new() nor pps_document_model_new_with_document()
+	 * supplies "annotation-model", which is CONSTRUCT_ONLY and whose setter
+	 * refs its value without a NULL check - so both emit
+	 * "g_object_ref: assertion 'G_IS_OBJECT (object)' failed" and, with
+	 * G_DEBUG=fatal-criticals, abort. Papers itself never uses either: it
+	 * builds the model in pps-document-view.blp with an annotation model
+	 * supplied. Do the same here. */
+	annot_model = pps_annotation_model_new ();
+	model = g_object_new (PPS_TYPE_DOCUMENT_MODEL,
+	                      "annotation-model", annot_model,
+	                      NULL);
+	g_object_unref (annot_model);
+
+	pps_document_model_set_continuous (model, FALSE);
+	pps_document_model_set_sizing_mode (model, PPS_SIZING_FREE);
+
+	preview = pps_view_new ();
+	preview_priv = GET_PRIVATE (preview);
+	preview_priv->is_link_preview = TRUE;
+	pps_view_set_model (preview, model);
+
+	annots_context = pps_annotations_context_new (model, NULL);
+	pps_view_set_annotations_context (preview, annots_context);
+	search_context = pps_search_context_new (model);
+	pps_view_set_search_context (preview, search_context);
+
+	/* Now the view is fully wired, give it the document to show. */
+	pps_document_model_set_document (model, document);
+	pps_document_model_set_rotation (model, rotation);
+	pps_document_model_set_scale (model, scale);
+	/* NB: the page is applied later, from link_preview_scroll_to_dest_cb,
+	 * once the view is mapped. See the comment there. */
+
+	g_object_unref (search_context);
+	g_object_unref (annots_context);
+	g_object_unref (model);
+
+	swindow = gtk_scrolled_window_new ();
+	gtk_scrolled_window_set_policy (GTK_SCROLLED_WINDOW (swindow),
+	                                GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
+	gtk_scrolled_window_set_child (GTK_SCROLLED_WINDOW (swindow), GTK_WIDGET (preview));
+
+	scroll_target = g_new0 (LinkPreviewScroll, 1);
+	scroll_target->preview = preview;
+	scroll_target->dest_page = priv->link_preview.dest_page;
+	scroll_target->left = left;
+	scroll_target->top = top;
+	scroll_target->frames_left = 60;
+	gtk_widget_add_tick_callback (swindow, link_preview_scroll_to_dest_cb,
+	                              scroll_target, g_free);
+
+	/* PpsView has no copy accelerator of its own: in the shell, copy is a
+	 * "doc" action bound to the document view. The pinned preview is not
+	 * that view, so it needs its own. */
+	shortcuts = gtk_shortcut_controller_new ();
+	gtk_shortcut_controller_set_scope (GTK_SHORTCUT_CONTROLLER (shortcuts),
+	                                   GTK_SHORTCUT_SCOPE_LOCAL);
+	gtk_shortcut_controller_add_shortcut (GTK_SHORTCUT_CONTROLLER (shortcuts),
+	                                      gtk_shortcut_new (gtk_keyval_trigger_new (GDK_KEY_c, GDK_CONTROL_MASK),
+	                                                        gtk_callback_action_new (link_preview_copy_cb, NULL, NULL)));
+	gtk_widget_add_controller (GTK_WIDGET (preview), shortcuts);
+	gtk_widget_set_can_focus (GTK_WIDGET (preview), TRUE);
+
+	priv->link_preview.view = preview;
+
+	/* Build a second popover rather than repurposing the hover one. The two
+	 * are configured as opposites - the hover preview is inert so the
+	 * pointer stays with the view, the pinned one must receive the drag that
+	 * selects text - and autohide cannot be flipped on a popover that is
+	 * already realized: GTK rebuilds its surface underneath the
+	 * unconditional gtk_popover_present() in size_allocate(). */
+	gtk_popover_get_pointing_to (GTK_POPOVER (popover), &pointing_to);
+
+	pinned = gtk_popover_new ();
+	gtk_popover_set_position (GTK_POPOVER (pinned), GTK_POS_TOP);
+	gtk_popover_set_autohide (GTK_POPOVER (pinned), TRUE);
+	gtk_popover_set_pointing_to (GTK_POPOVER (pinned), &pointing_to);
+	/* Size the child, not just the popover. A GtkScrolledWindow will happily
+	 * shrink to nothing, so constraining only the popover makes it settle at
+	 * exactly width x height *including* its theme padding - leaving a
+	 * content area smaller than the thumbnail's, which sizes the popover
+	 * from a GtkPicture whose intrinsic size is width x height. Requesting
+	 * the same size on the scrolled window makes the two match. */
+	gtk_widget_set_size_request (swindow, width, height);
+	gtk_widget_set_size_request (pinned, width, height);
+	gtk_popover_set_child (GTK_POPOVER (pinned), swindow);
+
+	/* Retire the hover popover, but not from inside this event dispatch:
+	 * we are called from the button-press handler, and destroying a native
+	 * surface here leaves GTK resolving pointer positions against a surface
+	 * that no longer exists. */
+	link_preview_drop_retired (view);
+	priv->link_preview.retired_popover = popover;
+	priv->link_preview.retire_idle_id =
+	    g_idle_add (link_preview_drop_retired_cb, view);
+
+	priv->link_preview.popover = pinned;
+	gtk_widget_set_parent (pinned, GTK_WIDGET (view));
+
+	g_signal_connect (pinned, "closed",
+	                  G_CALLBACK (link_preview_popover_closed), view);
+
+	gtk_popover_present (GTK_POPOVER (pinned));
+	gtk_popover_popup (GTK_POPOVER (pinned));
+	gtk_widget_grab_focus (GTK_WIDGET (preview));
+
 }
 
 static void
@@ -3880,11 +4231,14 @@ link_preview_job_finished_cb (PpsJobThumbnailTexture *job,
 }
 
 static void
-pps_view_link_preview_popover_cleanup (PpsView *view)
+link_preview_destroy (PpsView *view)
 {
 	PpsViewPrivate *priv = GET_PRIVATE (view);
 
 	g_clear_handle_id (&priv->link_preview.delay_timeout_id, g_source_remove);
+	g_clear_handle_id (&priv->link_preview.cleanup_idle_id, g_source_remove);
+	g_clear_handle_id (&priv->link_preview.retire_idle_id, g_source_remove);
+	link_preview_drop_retired (view);
 
 	if (priv->link_preview.job) {
 		pps_job_cancel (priv->link_preview.job);
@@ -3892,9 +4246,27 @@ pps_view_link_preview_popover_cleanup (PpsView *view)
 	}
 
 	if (priv->link_preview.popover) {
+		g_signal_handlers_disconnect_by_func (priv->link_preview.popover,
+		                                      link_preview_popover_closed, view);
 		gtk_popover_popdown (GTK_POPOVER (priv->link_preview.popover));
 		g_clear_pointer (&priv->link_preview.popover, gtk_widget_unparent);
 	}
+
+	priv->link_preview.pinned = FALSE;
+	priv->link_preview.view = NULL;
+}
+
+/* Teardown driven by pointer movement, scrolling and clicks. A pinned preview
+ * ignores all of those and is dismissed explicitly instead. */
+static void
+pps_view_link_preview_popover_cleanup (PpsView *view)
+{
+	PpsViewPrivate *priv = GET_PRIVATE (view);
+
+	if (priv->link_preview.pinned)
+		return;
+
+	link_preview_destroy (view);
 }
 
 static gboolean
@@ -4164,6 +4536,17 @@ pps_view_button_press_event (GtkGestureClick *self,
 	PpsDocument *document = pps_document_model_get_document (priv->model);
 	graphene_point_t loc;
 	gint first_page, last_page;
+
+
+	/* A secondary click while a link preview is up pins that preview rather
+	 * than opening the context menu. This has to run before the cleanup
+	 * below, which would otherwise tear the popover down first. */
+	if (gdk_event_triggers_context_menu (gtk_event_controller_get_current_event (controller)) &&
+	    priv->link_preview.popover && !priv->link_preview.pinned) {
+		link_preview_pin (view);
+		gtk_gesture_set_state (GTK_GESTURE (self), GTK_EVENT_SEQUENCE_CLAIMED);
+		return;
+	}
 
 	pps_view_link_preview_popover_cleanup (view);
 
@@ -5521,7 +5904,9 @@ pps_view_dispose (GObject *object)
 	g_clear_handle_id (&priv->cursor_blink_timeout_id, g_source_remove);
 	g_clear_handle_id (&priv->child_focus_idle_id, g_source_remove);
 
-	pps_view_link_preview_popover_cleanup (view);
+	/* Unconditional: a pinned preview must go too, along with any popover
+	 * still waiting to be retired and the idles that would drop it. */
+	link_preview_destroy (view);
 
 	gtk_scrollable_set_hadjustment (GTK_SCROLLABLE (view), NULL);
 	gtk_scrollable_set_vadjustment (GTK_SCROLLABLE (view), NULL);
@@ -6061,6 +6446,7 @@ pps_view_init (PpsView *view)
 	PpsViewPrivate *priv = GET_PRIVATE (view);
 
 	gtk_widget_init_template (GTK_WIDGET (view));
+
 
 	priv->start_page = -1;
 	priv->end_page = -1;
