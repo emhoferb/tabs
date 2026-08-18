@@ -79,9 +79,13 @@ worth knowing:
 - **Blueprint emits event controllers as `<child>`.** `GtkBox` treats a child as
   a widget to pack and silently drops the controller; `GtkSeparator` does not.
   Safer: add controllers from Rust with `add_controller()`.
-- **`AdwOverlaySplitView` sizes its sidebar by a *fraction*.** Converting a pixel
-  width during initial allocation gives a permanently wrong result, because the
-  split view is briefly a different size.
+- **`AdwOverlaySplitView` sizes its sidebar by a *fraction*** — it allocates
+  `clamp(fraction * total, min, max)`. Converting a stored pixel width into a
+  fraction is a trap: during initial allocation the split view is briefly a
+  different size, so the result is wrong permanently, and per-tab conversion
+  makes tabs disagree. Feed the pixel width in as `max-sidebar-width` and keep
+  the fraction as a stored constant instead — no measuring, and the width
+  becomes a ceiling rather than something that grows with the window.
 - **A drag gesture on a widget that moves as a result of the drag oscillates.**
   Put it on a stationary ancestor and use absolute coordinates.
 - **`pps_document_model_new()` and `new_with_document()` are broken upstream** —

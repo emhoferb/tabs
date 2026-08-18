@@ -37,7 +37,12 @@
     <key name="sidebar-width" type="i">
       <default>320</default>
       <summary>Width of the side bar, in pixels.</summary>
-      <description>Shared by every tab so the side bar does not change width when switching between documents.</description>
+      <description>Shared by every tab so the side bar does not change width when switching between documents. Acts as a ceiling: making the window wider never widens the side bar past it.</description>
+    </key>
+    <key name="sidebar-width-fraction" type="d">
+      <default>0.25</default>
+      <summary>Width of the side bar as a fraction of the window width.</summary>
+      <description>Used only while the window is narrow enough that this fraction falls below sidebar-width, so the side bar gives ground as the window shrinks. Stored alongside the pixel width so a tab opened later reproduces it exactly, without having to measure a window that may not be laid out yet.</description>
     </key>
     <key name="highlight-style" type="s">
       <choices>

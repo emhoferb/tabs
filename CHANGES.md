@@ -67,6 +67,14 @@ about 10px into the document side and barely into the sidebar, because a pointer
 arrow is drawn down-right of its hotspot and a symmetric zone feels wrong coming
 from the right.
 
+The dragged width is a **ceiling, not a target**. Widening the window never
+widens the sidebar past it; narrowing the window past the point where the
+sidebar would take up more than its share does narrow it, at libadwaita's
+default rate of a quarter of the window. That is the Evince behaviour: the
+sidebar has a settled width and only gives ground when there is no room for it.
+Upstream Papers leaves the width purely proportional, so a wide window gets an
+absurdly wide sidebar.
+
 ### Hideable floating controls
 
 `Ctrl+H`, or the main menu. Hides the zoom *and* annotation buttons, so the page
@@ -119,8 +127,15 @@ is unobstructed. Applies to every tab and is remembered.
     as a result of the drag, so a stationary pointer kept producing new offsets.
     Evince avoids this by using a `GtkPaned`, whose position is an exact pixel
     value in a stationary coordinate space.
-11. **Closing a tab returned to the start page** while a document was still open.
-12. **Outline sections collapsed** as soon as the reader scrolled past them.
+11. **The sidebar grew without limit with the window**, since upstream sizes it
+    as a plain fraction. The dragged width is now the maximum instead, with the
+    fraction only governing how it shrinks in a window too narrow to hold it.
+12. **A tab opened into a narrow window got its own sidebar width.** Deriving the
+    fraction per tab meant measuring a layout still in flux; the fraction is now
+    stored alongside the pixel width, so a new tab sets two properties and
+    measures nothing.
+13. **Closing a tab returned to the start page** while a document was still open.
+14. **Outline sections collapsed** as soon as the reader scrolled past them.
 
 ### Upstream bugs worth reporting
 
@@ -157,7 +172,8 @@ All under `org.gnome.Papers`:
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `sidebar-width` | 320 | Shared by all tabs |
+| `sidebar-width` | 320 | Shared by all tabs; a ceiling, not a fixed width |
+| `sidebar-width-fraction` | 0.25 | Rate the sidebar narrows at once the window is too small for `sidebar-width` |
 | `highlight-style` | `outline` | `outline` or `fill` |
 | `accent-source` | `system` | `system`, `upstream`, or a colour name |
 | `keep-outline-expanded` | true | Sections stay open once opened |

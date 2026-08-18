@@ -35,6 +35,15 @@ const GS_LAST_DOCUMENT_DIRECTORY: &str = "document-directory";
 const GS_LAST_PICTURES_DIRECTORY: &str = "pictures-directory";
 const GS_ALLOW_LINKS_CHANGE_ZOOM: &str = "allow-links-change-zoom";
 
+/// Bounds a dragged sidebar is held within, in pixels. These match the values
+/// the template gives the split view.
+const MIN_SIDEBAR: f64 = 150.;
+const MAX_SIDEBAR: f64 = 650.;
+
+/// The rate at which the sidebar narrows once the window is too small to hold
+/// it at its stored width — libadwaita's default, so the slope is upstream's.
+const BASE_FRACTION: f64 = 0.25;
+
 mod imp {
     use super::*;
 
@@ -450,72 +459,42 @@ mod imp {
                         return;
                     }
 
-                    if let Some((start_x, _)) = gesture.start_point() {
-                        obj.set_sidebar_width_px(start_x + offset_x);
-                    }
+                    let Some((start_x, _)) = gesture.start_point() else {
+                        return;
+                    };
 
-                    obj.release_sidebar_width();
-                    obj.save_sidebar_width();
+                    // Saved from the pointer rather than from the sidebar's
+                    // allocation, which may not have caught up with this last
+                    // update yet.
+                    let width = obj.set_sidebar_width_px(start_x + offset_x);
+
+                    // Records the new ceiling and slope, which every open tab
+                    // picks up through the settings; then lift the pin this
+                    // tab is still holding from the drag.
+                    obj.save_sidebar_width(width);
+                    obj.apply_sidebar_width();
                 }
             ));
             self.split_view.add_controller(drag);
 
-            // Not here: nothing is allocated yet during construction, so
-            // split_view.width() is zero and the fraction cannot be computed.
-            // A tab opened later would then ignore the shared width until
-            // something else resized it.
-            // The split view stores a *fraction* of its own width, so a stored
-            // pixel width has to be converted against it. Doing that during
-            // initial allocation gets the wrong answer: the split view is
-            // briefly a different size, and the fraction derived then is wrong
-            // for good - a 324px sidebar settled at 251px.
-            //
-            // So wait for the width to stop changing, apply once, and stop.
-            // Holding a fixed pixel width instead would fight the window as it
-            // is resized; letting the fraction stand keeps the proportional
-            // behaviour, where the sidebar narrows with the window.
-            let last_total = Cell::new(-1);
-            let frames = Cell::new(0);
-
-            self.split_view.add_tick_callback(glib::clone!(
-                #[weak(rename_to = obj)]
-                self,
-                #[upgrade_or]
-                glib::ControlFlow::Break,
-                move |split_view, _| {
-                    let total = split_view.width();
-
-                    frames.set(frames.get() + 1);
-                    if frames.get() > 120 {
-                        return glib::ControlFlow::Break;
-                    }
-
-                    if total <= 0 {
-                        return glib::ControlFlow::Continue;
-                    }
-
-                    if total != last_total.get() {
-                        last_total.set(total);
-                        return glib::ControlFlow::Continue;
-                    }
-
-                    obj.apply_sidebar_width(obj.settings.int("sidebar-width"));
-
-                    glib::ControlFlow::Break
-                }
-            ));
+            // Applied straight away, not from a tick callback: both values
+            // are plain properties, so nothing here needs the split view to
+            // have been allocated. That matters most for a tab opened into an
+            // already-running window, which used to measure a layout still in
+            // flux and settle on its own width.
+            self.apply_sidebar_width();
 
             // Follow later changes so every open tab tracks the same width.
-            self.settings.connect_changed(
-                Some("sidebar-width"),
-                glib::clone!(
-                    #[weak(rename_to = obj)]
-                    self,
-                    move |settings, _| {
-                        obj.apply_sidebar_width(settings.int("sidebar-width"));
-                    }
-                ),
-            );
+            for key in ["sidebar-width", "sidebar-width-fraction"] {
+                self.settings.connect_changed(
+                    Some(key),
+                    glib::clone!(
+                        #[weak(rename_to = obj)]
+                        self,
+                        move |_, _| obj.apply_sidebar_width()
+                    ),
+                );
+            }
 
             self.breakpoints_installed.set(true);
             self.apply_collapse_setting();
@@ -553,16 +532,26 @@ mod imp {
             self.breakpoints_installed.set(want);
         }
 
-        pub(super) fn apply_sidebar_width(&self, width: i32) {
-            let total = self.split_view.width();
-            if total <= 0 {
-                return;
-            }
+        /// Give the split view the stored width, as a ceiling rather than a
+        /// target.
+        ///
+        /// The split view allocates `clamp(fraction * total, min, max)`. Upstream
+        /// leaves the fraction at its default, so the sidebar is purely
+        /// proportional and a wide window gets an absurdly wide sidebar. Feeding
+        /// the dragged width in as `max` instead pins it: past
+        /// `width / fraction` the window can grow without the sidebar following,
+        /// and below that threshold the fraction takes over and the sidebar
+        /// gives ground as the window narrows — the behaviour Evince had.
+        pub(super) fn apply_sidebar_width(&self) {
+            let width = (self.settings.int("sidebar-width") as f64).clamp(MIN_SIDEBAR, MAX_SIDEBAR);
+            let fraction = self
+                .settings
+                .double("sidebar-width-fraction")
+                .clamp(BASE_FRACTION, 1.);
 
-            let width = (width as f64).clamp(150., 650.);
-
-            self.split_view
-                .set_sidebar_width_fraction(width / total as f64);
+            self.split_view.set_min_sidebar_width(MIN_SIDEBAR);
+            self.split_view.set_max_sidebar_width(width);
+            self.split_view.set_sidebar_width_fraction(fraction);
         }
 
         /// Pin the sidebar to an exact pixel width.
@@ -570,30 +559,45 @@ mod imp {
         /// Setting only the fraction leaves the final width to rounding inside
         /// the split view, which is another source of jitter while dragging.
         /// Clamping min and max to the same value makes it exact.
-        fn set_sidebar_width_px(&self, width: f64) {
+        fn set_sidebar_width_px(&self, width: f64) -> f64 {
+            let width = width.clamp(MIN_SIDEBAR, MAX_SIDEBAR).round();
             let total = self.split_view.width();
             if total <= 0 {
-                return;
+                return width;
             }
-
-            let width = width.clamp(150., 650.).round();
 
             self.split_view.set_min_sidebar_width(width);
             self.split_view.set_max_sidebar_width(width);
             self.split_view
                 .set_sidebar_width_fraction(width / total as f64);
+
+            width
         }
 
-        /// Restore the configured bounds after a drag, keeping the width.
-        fn release_sidebar_width(&self) {
-            self.split_view.set_min_sidebar_width(150.);
-            self.split_view.set_max_sidebar_width(650.);
-        }
+        /// Store the dragged width, plus the slope to shrink along.
+        ///
+        /// The fraction is normally the default, so the sidebar narrows at the
+        /// same rate as upstream's; it is only raised when the window is too
+        /// narrow for the default fraction to have reached the requested width,
+        /// since a ceiling the fraction can never reach would make the drag
+        /// itself impossible.
+        ///
+        /// Keeping the fraction here rather than deriving it per tab is what
+        /// makes a new tab match: it never has to measure anything.
+        pub(super) fn save_sidebar_width(&self, width: f64) {
+            let total = self.split_view.width();
 
-        pub(super) fn save_sidebar_width(&self) {
-            let _ = self
-                .settings
-                .set_int("sidebar-width", self.sidebar_box.width());
+            let fraction = if total > 0 {
+                (width / total as f64).clamp(BASE_FRACTION, 1.)
+            } else {
+                BASE_FRACTION
+            };
+
+            // Fraction first: the width is the value both handlers key off, so
+            // writing it last means the pair is never briefly mismatched in a
+            // way that outlives the frame.
+            let _ = self.settings.set_double("sidebar-width-fraction", fraction);
+            let _ = self.settings.set_int("sidebar-width", width as i32);
         }
 
         /// Assemble the zoom menu: the fit modes come from the template, the
