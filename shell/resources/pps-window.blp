@@ -133,6 +133,16 @@ template $PpsWindow: Adw.ApplicationWindow {
     scope: global;
 
     Shortcut {
+      trigger: "<Ctrl>h";
+      action: "action(win.show-zoom-overlay)";
+    }
+
+    Shortcut {
+      trigger: "<Ctrl><Shift>n";
+      action: "action(win.new-window)";
+    }
+
+    Shortcut {
       trigger: "<Ctrl>t";
       action: "action(win.new-tab)";
     }

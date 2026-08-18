@@ -8,6 +8,7 @@ blueprint_sources = [
   'pps-loader-view.blp',
   'pps-page-selector.blp',
   'pps-password-dialog.blp',
+  'pps-preferences-dialog.blp',
   'pps-password-view.blp',
   'pps-progress-message-area.blp',
   'pps-properties-fonts.blp',

@@ -47,6 +47,8 @@ mod imp {
         /// Set while a file-open request should land in a new tab rather than
         /// replacing the current one.
         pub(super) open_in_new_tab: Cell<bool>,
+        /// Set while an explicit "open in a new window" request is in flight.
+        pub(super) force_new_window: Cell<bool>,
         #[template_child]
         pub(super) presentation: TemplateChild<papers_view::ViewPresentation>,
         #[template_child]
@@ -115,6 +117,7 @@ mod imp {
             // its own application id, and the warning paint is just noise.
 
             self.setup_actions();
+            self.setup_zoom_overlay();
 
             self.obj()
                 .change_action_state("night-mode", &self.settings.boolean("night-mode").into());
@@ -223,6 +226,8 @@ mod imp {
 
             view.set_tab_view(&self.tab_view);
 
+            view.set_zoom_overlay_visible(self.settings.boolean("show-zoom-overlay"));
+
             let page = self.tab_view.append(&view);
 
             self.tab_view.set_selected_page(&page);
@@ -233,6 +238,43 @@ mod imp {
         /// Label the tab that holds `view`.
         pub(super) fn set_tab_title(&self, view: &PpsDocumentView, title: &str) {
             self.tab_view.page(view).set_title(title);
+        }
+
+        /// Floating zoom/annotation controls: honour the setting, keep the
+        /// menu item's check state in step, and apply it to every tab.
+        fn setup_zoom_overlay(&self) {
+            let apply = glib::clone!(
+                #[weak(rename_to = obj)]
+                self,
+                move || {
+                    let show = obj.settings.boolean("show-zoom-overlay");
+
+                    obj.obj()
+                        .change_action_state("show-zoom-overlay", &show.into());
+
+                    for i in 0..obj.tab_view.n_pages() {
+                        if let Ok(view) = obj
+                            .tab_view
+                            .nth_page(i)
+                            .child()
+                            .downcast::<PpsDocumentView>()
+                        {
+                            view.set_zoom_overlay_visible(show);
+                        }
+                    }
+                }
+            );
+
+            apply();
+
+            self.settings.connect_changed(
+                Some("show-zoom-overlay"),
+                glib::clone!(
+                    #[strong]
+                    apply,
+                    move |_, _| apply()
+                ),
+            );
         }
 
         pub(super) fn open_copy(
@@ -422,6 +464,16 @@ mod imp {
                         }
                     ))
                     .build(),
+                gio::ActionEntryBuilder::new("preferences")
+                    .activate(glib::clone!(
+                        #[weak(rename_to = obj)]
+                        self,
+                        move |_, _, _| {
+                            crate::preferences_dialog::PpsPreferencesDialog::new()
+                                .present(Some(obj.obj().as_ref()));
+                        }
+                    ))
+                    .build(),
                 gio::ActionEntryBuilder::new("new-tab")
                     .activate(glib::clone!(
                         #[weak(rename_to = obj)]
@@ -433,6 +485,28 @@ mod imp {
                             obj.cmd_file_open();
                         }
                     ))
+                    .build(),
+                gio::ActionEntryBuilder::new("new-window")
+                    .activate(glib::clone!(
+                        #[weak(rename_to = obj)]
+                        self,
+                        move |_, _, _| {
+                            // Force a window regardless of the preference.
+                            obj.open_in_new_tab.set(false);
+                            obj.force_new_window.set(true);
+                            obj.cmd_file_open();
+                        }
+                    ))
+                    .build(),
+                gio::ActionEntryBuilder::new("show-zoom-overlay")
+                    .state(true.into())
+                    .activate(|window: &super::PpsWindow, action, _| {
+                        let showing = action.state().and_then(|s| s.get::<bool>()).unwrap_or(true);
+                        let _ = window
+                            .imp()
+                            .settings
+                            .set_boolean("show-zoom-overlay", !showing);
+                    })
                     .build(),
                 gio::ActionEntryBuilder::new("close-tab")
                     .activate(glib::clone!(
@@ -1237,7 +1311,18 @@ mod imp {
                         let uri = f.uri();
 
                         if obj.obj().uri().is_some_and(|u| u != uri) {
-                            spawn(Some(&f), None, None);
+                            // A different document: a tab by default, a window
+                            // if the preference says so or the user explicitly
+                            // asked for one.
+                            let want_window = obj.force_new_window.replace(false)
+                                || !obj.settings.boolean("open-in-new-tab");
+
+                            if want_window {
+                                spawn(Some(&f), None, None);
+                            } else {
+                                obj.open_in_new_tab.set(true);
+                                obj.open(&f, None, None);
+                            }
                         } else {
                             obj.open(&f, None, None);
                         }

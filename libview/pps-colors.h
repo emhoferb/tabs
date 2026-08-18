@@ -11,6 +11,9 @@
  * where the desktop selects its accent by swapping theme variants. */
 AdwAccentColor pps_get_accent_color (void);
 
+/* Re-resolve the accent and reinstall the CSS override. */
+void pps_accent_color_refresh (void);
+
 void get_accent_color (GdkRGBA *color, GdkRGBA *foreground_color);
 
 #ifdef HAVE_TRANSPARENT_SELECTION

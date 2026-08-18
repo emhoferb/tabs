@@ -1,0 +1,82 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $PpsPreferencesDialog: Adw.PreferencesDialog {
+  title: _("Preferences");
+  content-width: 520;
+
+  Adw.PreferencesPage {
+    icon-name: "applications-graphics-symbolic";
+    title: _("Appearance");
+
+    Adw.PreferencesGroup {
+      title: _("Selection Highlight");
+      description: _("How the current entry is marked in the outline, search results and thumbnails");
+
+      Adw.ComboRow highlight_row {
+        title: _("Highlight Style");
+
+        model: StringList {
+          strings [
+            _("Coloured border"),
+            _("Filled"),
+          ]
+        };
+      }
+
+      Adw.ComboRow accent_row {
+        title: _("Accent Colour");
+        subtitle: _("Follow the desktop, or pick a fixed colour");
+
+        model: StringList {
+          strings [
+            _("Follow system"),
+            _("Papers default (blue)"),
+            _("Orange"),
+            _("Bark"),
+            _("Sage"),
+            _("Olive"),
+            _("Viridian"),
+            _("Prussian green"),
+            _("Blue"),
+            _("Purple"),
+            _("Magenta"),
+            _("Red"),
+          ]
+        };
+      }
+    }
+
+    Adw.PreferencesGroup {
+      title: _("Document View");
+
+      Adw.SwitchRow zoom_overlay_row {
+        title: _("Floating Controls");
+        subtitle: _("Zoom and annotation buttons over the page (Ctrl+H)");
+      }
+    }
+  }
+
+  Adw.PreferencesPage {
+    icon-name: "view-list-symbolic";
+    title: _("Behaviour");
+
+    Adw.PreferencesGroup {
+      title: _("Outline");
+
+      Adw.SwitchRow keep_expanded_row {
+        title: _("Keep Sections Expanded");
+        subtitle: _("Sections opened while scrolling stay open instead of collapsing again");
+      }
+    }
+
+    Adw.PreferencesGroup {
+      title: _("Opening Documents");
+
+      Adw.SwitchRow new_tab_row {
+        title: _("Open in New Tab");
+        subtitle: _("Documents opened from the file manager or the Open dialog become tabs rather than windows");
+      }
+    }
+  }
+}

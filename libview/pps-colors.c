@@ -103,12 +103,50 @@ accent_from_theme_name (AdwAccentColor *out)
 	return accent_from_theme_string (theme, out);
 }
 
+/* Named accents the user can pick explicitly, matching the Ubuntu palette. */
+static const struct {
+	const char *name;
+	AdwAccentColor accent;
+} named_accents[] = {
+	{ "orange", ADW_ACCENT_COLOR_ORANGE },
+	{ "bark", ADW_ACCENT_COLOR_YELLOW },
+	{ "sage", ADW_ACCENT_COLOR_GREEN },
+	{ "olive", ADW_ACCENT_COLOR_GREEN },
+	{ "viridian", ADW_ACCENT_COLOR_TEAL },
+	{ "prussiangreen", ADW_ACCENT_COLOR_TEAL },
+	{ "blue", ADW_ACCENT_COLOR_BLUE },
+	{ "purple", ADW_ACCENT_COLOR_PURPLE },
+	{ "magenta", ADW_ACCENT_COLOR_PINK },
+	{ "red", ADW_ACCENT_COLOR_RED },
+	{ "teal", ADW_ACCENT_COLOR_TEAL },
+	{ "slate", ADW_ACCENT_COLOR_SLATE },
+};
+
 static gboolean
 resolve_accent (AdwAccentColor *out, gboolean *overridden)
 {
 	AdwStyleManager *style_manager = adw_style_manager_get_default ();
 	AdwAccentColor accent = adw_style_manager_get_accent_color (style_manager);
 	AdwAccentColor from_theme;
+	g_autoptr (GSettings) settings = g_settings_new ("org.gnome.Papers");
+	g_autofree char *source = g_settings_get_string (settings, "accent-source");
+
+	/* An explicit choice wins over everything. */
+	if (source && g_strcmp0 (source, "system") != 0) {
+		if (g_strcmp0 (source, "upstream") == 0) {
+			*out = ADW_ACCENT_COLOR_BLUE;
+			*overridden = TRUE;
+			return TRUE;
+		}
+
+		for (guint i = 0; i < G_N_ELEMENTS (named_accents); i++) {
+			if (g_strcmp0 (source, named_accents[i].name) == 0) {
+				*out = named_accents[i].accent;
+				*overridden = TRUE;
+				return TRUE;
+			}
+		}
+	}
 
 	/* Blue is also libadwaita's value when nothing has been published, so it
 	 * is the only case where the theme name is worth consulting. Anything
@@ -124,43 +162,67 @@ resolve_accent (AdwAccentColor *out, gboolean *overridden)
 	return TRUE;
 }
 
+/* The accent can change at runtime now that it is a preference, so the CSS
+ * override has to be replaceable rather than installed once. */
+static GtkCssProvider *accent_provider = NULL;
+
+void
+pps_accent_color_refresh (void)
+{
+	GdkDisplay *display = gdk_display_get_default ();
+	AdwAccentColor accent;
+	gboolean overridden = FALSE;
+	GdkRGBA bg;
+	g_autofree char *bg_str = NULL;
+	g_autofree char *css = NULL;
+
+	if (!display)
+		return;
+
+	if (accent_provider) {
+		gtk_style_context_remove_provider_for_display (
+		    display, GTK_STYLE_PROVIDER (accent_provider));
+		g_clear_object (&accent_provider);
+	}
+
+	resolve_accent (&accent, &overridden);
+	if (!overridden)
+		return;
+
+	adw_accent_color_to_rgba (accent, &bg);
+	bg_str = gdk_rgba_to_string (&bg);
+	css = g_strdup_printf (":root {"
+			       "  --accent-bg-color: %s;"
+			       "  --accent-color: %s;"
+			       "  --accent-fg-color: #ffffff;"
+			       "}",
+			       bg_str, bg_str);
+
+	accent_provider = gtk_css_provider_new ();
+	gtk_css_provider_load_from_string (accent_provider, css);
+	gtk_style_context_add_provider_for_display (
+	    display, GTK_STYLE_PROVIDER (accent_provider),
+	    GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+}
+
 /* Widgets styled by libadwaita - the sidebar selection above all - take their
  * colour from the --accent-* CSS variables rather than from this code, and
  * libadwaita has no setter for the accent. When the accent has been inferred
- * from the theme, redefine those variables so CSS and rendering agree. */
+ * or chosen, redefine those variables so CSS and rendering agree.
+ */
 static void
 ensure_accent_css (void)
 {
 	static gsize done = 0;
 
 	if (g_once_init_enter (&done)) {
-		AdwAccentColor accent;
-		gboolean overridden = FALSE;
+		g_autoptr (GSettings) settings = g_settings_new ("org.gnome.Papers");
 
-		resolve_accent (&accent, &overridden);
+		pps_accent_color_refresh ();
 
-		if (overridden && gdk_display_get_default ()) {
-			GdkRGBA bg;
-			g_autofree char *bg_str = NULL;
-			g_autofree char *css = NULL;
-			GtkCssProvider *provider;
-
-			adw_accent_color_to_rgba (accent, &bg);
-			bg_str = gdk_rgba_to_string (&bg);
-			css = g_strdup_printf (":root {"
-					       "  --accent-bg-color: %s;"
-					       "  --accent-color: %s;"
-					       "  --accent-fg-color: #ffffff;"
-					       "}",
-					       bg_str, bg_str);
-
-			provider = gtk_css_provider_new ();
-			gtk_css_provider_load_from_string (provider, css);
-			gtk_style_context_add_provider_for_display (
-			    gdk_display_get_default (),
-			    GTK_STYLE_PROVIDER (provider),
-			    GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
-		}
+		/* Deliberately leaked: it must outlive every view. */
+		g_signal_connect (g_object_ref (settings), "changed::accent-source",
+				  G_CALLBACK (pps_accent_color_refresh), NULL);
 
 		g_once_init_leave (&done, 1);
 	}

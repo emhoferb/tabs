@@ -965,6 +965,15 @@ impl PpsDocumentView {
         self.imp().tab_bar.set_view(Some(tab_view));
     }
 
+    /// Show or hide the floating controls over the page: the zoom buttons and
+    /// the annotation button alike, so the page can be read unobstructed.
+    pub fn set_zoom_overlay_visible(&self, visible: bool) {
+        let imp = self.imp();
+
+        imp.zoom_toolbar.set_visible(visible);
+        imp.annot_toolbar.set_visible(visible);
+    }
+
     pub fn new() -> Self {
         glib::Object::builder()
             .property("application", gio::Application::default())

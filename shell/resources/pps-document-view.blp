@@ -845,12 +845,34 @@ menu sidebar_menu {
       label: _("Open…");
       action: "win.open";
     }
+
+    item {
+      label: _("Open in New _Tab…");
+      action: "win.new-tab";
+    }
+
+    item {
+      label: _("Open in New _Window…");
+      action: "win.new-window";
+    }
   }
 
   section {
     item {
       label: _("Ni_ght Mode");
       action: "win.night-mode";
+    }
+
+    item {
+      label: _("Floating _Controls");
+      action: "win.show-zoom-overlay";
+    }
+  }
+
+  section {
+    item {
+      label: _("_Preferences");
+      action: "win.preferences";
     }
   }
 
