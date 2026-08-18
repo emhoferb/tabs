@@ -260,6 +260,13 @@ template $PpsDocumentView: Adw.BreakpointBin {
       content: Box view_box {
         orientation: vertical;
 
+        /* Bound to the window's tab view. Every document view carries one, so
+         * the bar always sits under that tab's header and beside its sidebar,
+         * where tabs are normally found, rather than spanning the window. */
+        Adw.TabBar tab_bar {
+          autohide: true;
+        }
+
         Adw.Banner banner {
           button-clicked => $view_banner_cancelled() swapped;
         }

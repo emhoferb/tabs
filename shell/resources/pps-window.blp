@@ -105,7 +105,10 @@ template $PpsWindow: Adw.ApplicationWindow {
       Adw.ViewStackPage {
         name: "document";
 
-        child: $PpsDocumentView document_view {};
+        child: Adw.TabView tab_view {
+          close-page => $tab_close_page() swapped;
+          notify::selected-page => $tab_selected_page_changed() swapped;
+        };
       }
 
       Adw.ViewStackPage {
@@ -125,6 +128,30 @@ template $PpsWindow: Adw.ApplicationWindow {
       }
     };
   };
+
+  ShortcutController {
+    scope: global;
+
+    Shortcut {
+      trigger: "<Ctrl>t";
+      action: "action(win.new-tab)";
+    }
+
+    Shortcut {
+      trigger: "<Ctrl>w";
+      action: "action(win.close-tab)";
+    }
+
+    Shortcut {
+      trigger: "<Ctrl>Tab|<Ctrl>Page_Down";
+      action: "action(win.next-tab)";
+    }
+
+    Shortcut {
+      trigger: "<Ctrl><Shift>Tab|<Ctrl>Page_Up";
+      action: "action(win.previous-tab)";
+    }
+  }
 
   DropTarget {
     formats: "GdkFileList";

@@ -318,3 +318,12 @@ listview.pps-outline > row:selected {
 listview.pps-outline > row:selected:hover {
   background-color: color-mix(in srgb, var(--accent-bg-color) 90%, white);
 }
+
+/* The devel profile paints diagonal stripes across the header to mark a
+ * development build. This is a fork built from the devel profile for its
+ * separate app id, not a nightly, so the warning paint is just noise. */
+window.devel headerbar,
+window.devel .titlebar,
+window.devel headerbar.titlebar {
+  background-image: none;
+}

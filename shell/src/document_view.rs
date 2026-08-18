@@ -59,6 +59,8 @@ mod imp {
         #[template_child]
         pub(super) zoom_button: TemplateChild<gtk::MenuButton>,
         #[template_child]
+        pub(super) tab_bar: TemplateChild<adw::TabBar>,
+        #[template_child]
         pub(super) zoom_fit_menu: TemplateChild<gio::Menu>,
         #[template_child]
         pub(super) sidebar_box: TemplateChild<gtk::Box>,
@@ -909,6 +911,11 @@ glib::wrapper! {
 }
 
 impl PpsDocumentView {
+    /// Point this view's tab bar at the window's tab view.
+    pub fn set_tab_view(&self, tab_view: &adw::TabView) {
+        self.imp().tab_bar.set_view(Some(tab_view));
+    }
+
     pub fn new() -> Self {
         glib::Object::builder()
             .property("application", gio::Application::default())

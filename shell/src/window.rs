@@ -44,7 +44,10 @@ mod imp {
         #[template_child]
         pub(super) password_view: TemplateChild<PpsPasswordView>,
         #[template_child]
-        pub(super) document_view: TemplateChild<PpsDocumentView>,
+        pub(super) tab_view: TemplateChild<adw::TabView>,
+        /// Set while a file-open request should land in a new tab rather than
+        /// replacing the current one.
+        pub(super) open_in_new_tab: Cell<bool>,
         #[template_child]
         pub(super) presentation: TemplateChild<papers_view::ViewPresentation>,
         #[template_child]
@@ -128,7 +131,7 @@ mod imp {
 
     impl WindowImpl for PpsWindow {
         fn close_request(&self) -> glib::Propagation {
-            if self.document_view.close_handled() == glib::Propagation::Stop {
+            if self.document_view().close_handled() == glib::Propagation::Stop {
                 return glib::Propagation::Stop;
             }
 
@@ -200,6 +203,39 @@ mod imp {
             }
         }
 
+        /// The view of the currently selected tab, creating the first tab on
+        /// demand so callers never have to care whether one exists yet.
+        pub(super) fn document_view(&self) -> PpsDocumentView {
+            if let Some(page) = self.tab_view.selected_page() {
+                if let Ok(view) = page.child().downcast::<PpsDocumentView>() {
+                    return view;
+                }
+            }
+
+            self.add_tab()
+        }
+
+        /// Append a tab and select it.
+        pub(super) fn add_tab(&self) -> PpsDocumentView {
+            // Not PpsDocumentView::new(): that still sets "application" and
+            // "show-menubar" from when the document view was the window, and
+            // neither property exists on the widget.
+            let view = glib::Object::builder::<PpsDocumentView>().build();
+
+            view.set_tab_view(&self.tab_view);
+
+            let page = self.tab_view.append(&view);
+
+            self.tab_view.set_selected_page(&page);
+
+            view
+        }
+
+        /// Label the tab that holds `view`.
+        pub(super) fn set_tab_title(&self, view: &PpsDocumentView, title: &str) {
+            self.tab_view.page(view).set_title(title);
+        }
+
         pub(super) fn open_copy(
             &self,
             metadata: Option<&papers_view::Metadata>,
@@ -207,21 +243,25 @@ mod imp {
             display_name: &str,
             edit_name: &str,
         ) {
-            let win = super::PpsWindow::new();
-            let imp = win.imp();
-            let document = self.document_view.model().document().unwrap();
+            // Open in a new tab of this window rather than a new window: this
+            // is what middle-clicking a cross-reference goes through, and a
+            // tab keeps the reference next to the text that cited it.
+            let Some(document) = self.document_view().model().document() else {
+                return;
+            };
 
-            imp.document_view.set_filenames(display_name, edit_name);
-            imp.document_view
-                .open_document(&document, metadata, dest, WindowRunMode::Normal);
-            imp.set_mode(WindowRunMode::Normal);
+            let view = self.add_tab();
 
-            win.set_default_size(self.obj().width(), self.obj().height());
-            win.present();
+            view.set_filenames(display_name, edit_name);
+            view.open_document(&document, metadata, dest, WindowRunMode::Normal);
+            view.set_inverted_colors(self.settings.boolean("night-mode"));
+
+            self.set_tab_title(&view, display_name);
+            self.set_mode(WindowRunMode::Normal);
         }
 
         fn check_document_modified(&self) -> Option<String> {
-            let document = self.document_view.model().document()?;
+            let document = self.document_view().model().document()?;
 
             let forms_modified = document
                 .dynamic_cast_ref::<papers_document::DocumentForms>()
@@ -279,7 +319,7 @@ mod imp {
         }
 
         fn run_presentation(&self) {
-            let model = self.document_view.model();
+            let model = self.document_view().model();
 
             let Some(document) = model.document() else {
                 return;
@@ -320,7 +360,7 @@ mod imp {
             let page = self.presentation.current_page();
             let rotation = self.presentation.rotation();
 
-            let model = self.document_view.model();
+            let model = self.document_view().model();
 
             model.set_page(page as i32);
             model.set_rotation(rotation as i32);
@@ -358,7 +398,7 @@ mod imp {
                 return;
             }
 
-            self.document_view
+            self.document_view()
                 .activate_action("doc.escape", None)
                 .unwrap();
         }
@@ -383,6 +423,55 @@ mod imp {
                         }
                     ))
                     .build(),
+                gio::ActionEntryBuilder::new("new-tab")
+                    .activate(glib::clone!(
+                        #[weak(rename_to = obj)]
+                        self,
+                        move |_, _, _| {
+                            // A tab needs a document, so this is "open a file
+                            // in a new tab" rather than a blank tab.
+                            obj.open_in_new_tab.set(true);
+                            obj.cmd_file_open();
+                        }
+                    ))
+                    .build(),
+                gio::ActionEntryBuilder::new("close-tab")
+                    .activate(glib::clone!(
+                        #[weak(rename_to = obj)]
+                        self,
+                        move |_, _, _| {
+                            if let Some(page) = obj.tab_view.selected_page() {
+                                // Closing the only tab closes the window, which
+                                // is what Ctrl+W does in a single-tab viewer.
+                                if obj.tab_view.n_pages() <= 1 {
+                                    obj.obj().close();
+                                } else {
+                                    obj.tab_view.close_page(&page);
+                                }
+                            } else {
+                                obj.obj().close();
+                            }
+                        }
+                    ))
+                    .build(),
+                gio::ActionEntryBuilder::new("next-tab")
+                    .activate(glib::clone!(
+                        #[weak(rename_to = obj)]
+                        self,
+                        move |_, _, _| {
+                            obj.tab_view.select_next_page();
+                        }
+                    ))
+                    .build(),
+                gio::ActionEntryBuilder::new("previous-tab")
+                    .activate(glib::clone!(
+                        #[weak(rename_to = obj)]
+                        self,
+                        move |_, _, _| {
+                            obj.tab_view.select_previous_page();
+                        }
+                    ))
+                    .build(),
                 gio::ActionEntryBuilder::new("fullscreen")
                     .state(false.into())
                     .change_state(glib::clone!(
@@ -391,7 +480,7 @@ mod imp {
                         move |_, action, state| {
                             let enabled = state.and_then(|v| v.get::<bool>()).unwrap();
 
-                            obj.document_view.set_fullscreen_mode(enabled);
+                            obj.document_view().set_fullscreen_mode(enabled);
 
                             if enabled {
                                 obj.obj().fullscreen();
@@ -622,7 +711,10 @@ mod imp {
                 }
             };
 
-            self.document_view.set_filenames(&display_name, &edit_name);
+            let view = self.document_view();
+
+            view.set_filenames(&display_name, &edit_name);
+            self.set_tab_title(&view, &display_name);
 
             self.display_name.replace(display_name);
             self.edit_name.replace(edit_name);
@@ -699,7 +791,7 @@ mod imp {
 
                     let document = job.loaded_document();
 
-                    obj.document_view.reload_document(document.as_ref());
+                    obj.document_view().reload_document(document.as_ref());
 
                     obj.clear_reload_job();
                 }
@@ -808,7 +900,7 @@ mod imp {
                                 obj,
                                 move || {
                                     if obj.mode.get() != WindowRunMode::Presentation {
-                                        obj.document_view.focus_view()
+                                        obj.document_view().focus_view()
                                     }
                                 }
                             ),
@@ -824,6 +916,12 @@ mod imp {
             dest: Option<&papers_document::LinkDest>,
             mode: Option<WindowRunMode>,
         ) {
+            // Honour a pending "open in a new tab" request before anything
+            // resolves document_view(), so the load lands in the new tab.
+            if self.open_in_new_tab.replace(false) && !self.document_view().is_empty() {
+                self.add_tab();
+            }
+
             self.clear_load_job();
             self.clear_local_uri();
 
@@ -892,14 +990,14 @@ mod imp {
                                 pending_mode = m;
                             }
 
-                            obj.document_view.open_document(
+                            obj.document_view().open_document(
                                 &document,
                                 obj.metadata.borrow().clone().as_ref(),
                                 dest.as_ref(),
                                 pending_mode,
                             );
 
-                            obj.document_view
+                            obj.document_view()
                                 .set_inverted_colors(obj.settings.boolean("night-mode"));
 
                             match pending_mode {
@@ -1065,7 +1163,7 @@ mod imp {
         }
 
         fn set_night_mode(&self, night_mode: bool) {
-            self.document_view.set_inverted_colors(night_mode);
+            self.document_view().set_inverted_colors(night_mode);
 
             let manager = adw::StyleManager::for_display(&WidgetExt::display(&self.obj().clone()));
 
@@ -1158,6 +1256,36 @@ mod imp {
 
     #[gtk::template_callbacks]
     impl PpsWindow {
+        #[template_callback]
+        fn tab_close_page(&self, page: &adw::TabPage) -> glib::Propagation {
+            // Give the document in this tab the same chance to object -
+            // unsaved annotations, say - that closing the window would.
+            if let Ok(view) = page.child().downcast::<PpsDocumentView>() {
+                if view.close_handled() == glib::Propagation::Stop {
+                    self.tab_view.close_page_finish(page, false);
+                    return glib::Propagation::Stop;
+                }
+            }
+
+            self.tab_view.close_page_finish(page, true);
+
+            // Closing the last tab leaves nothing to look at, so fall back to
+            // the start page rather than an empty window.
+            if self.tab_view.n_pages() <= 1 {
+                self.stack.set_visible_child_name("start");
+            }
+
+            glib::Propagation::Stop
+        }
+
+        #[template_callback]
+        fn tab_selected_page_changed(&self) {
+            // The window title follows the active tab.
+            if let Some(page) = self.tab_view.selected_page() {
+                self.obj().set_title(Some(&page.title()));
+            }
+        }
+
         #[template_callback]
         fn window_fullscreened(&self) {
             let obj = self.obj();
@@ -1305,11 +1433,11 @@ impl PpsWindow {
     }
 
     pub fn document(&self) -> Option<papers_document::Document> {
-        self.imp().document_view.model().document()
+        self.imp().document_view().model().document()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.imp().document_view.is_empty() && self.imp().load_job.borrow().is_none()
+        self.imp().document_view().is_empty() && self.imp().load_job.borrow().is_none()
     }
 
     pub fn metadata(&self) -> Option<papers_view::Metadata> {
@@ -1317,7 +1445,7 @@ impl PpsWindow {
     }
 
     pub fn print_range(&self, first_page: i32, last_page: i32) {
-        self.imp().document_view.print_range(first_page, last_page);
+        self.imp().document_view().print_range(first_page, last_page);
     }
 
     pub fn open_copy(
