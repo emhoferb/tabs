@@ -14,7 +14,6 @@ use papers_view::JobPriority;
 use papers_view::SizingMode;
 
 use crate::application::spawn;
-use crate::config::PROFILE;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub enum WindowRunMode {
@@ -110,10 +109,10 @@ mod imp {
         fn constructed(&self) {
             self.parent_constructed();
 
-            #[allow(clippy::const_is_empty)]
-            if !PROFILE.is_empty() {
-                self.obj().add_css_class("devel");
-            }
+            // Deliberately not adding the "devel" style class. It paints
+            // diagonal stripes across the header to mark a nightly build; this
+            // is a fork that merely builds with the devel profile so it gets
+            // its own application id, and the warning paint is just noise.
 
             self.setup_actions();
 
