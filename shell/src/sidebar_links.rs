@@ -364,6 +364,8 @@ mod imp {
     impl ObjectImpl for PpsSidebarLinks {
         fn constructed(&self) {
             let obj = self.obj();
+            crate::style::track_highlight_style(&*self.list_view);
+
             let action_entries = [
                 gio::ActionEntry::builder("collapse-all")
                     .activate(glib::clone!(

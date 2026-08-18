@@ -64,6 +64,8 @@ mod imp {
         pub(super) zoom_fit_menu: TemplateChild<gio::Menu>,
         #[template_child]
         pub(super) sidebar_box: TemplateChild<gtk::Box>,
+        #[template_child]
+        pub(super) sidebar_resizer: TemplateChild<gtk::Box>,
         /// Sidebar width when the current resize drag started, in pixels.
         pub(super) sidebar_drag_start_width: Cell<i32>,
         #[template_child]
@@ -270,6 +272,7 @@ mod imp {
             self.parent_constructed();
 
             self.setup_zoom_menu();
+            self.setup_sidebar_resizer();
             self.sidebar_was_open_before_find.set(true);
 
             let page_cache_mb = self.settings.uint(GS_PAGE_CACHE_SIZE) as usize;
@@ -346,30 +349,76 @@ mod imp {
     impl WidgetImpl for PpsDocumentView {}
 
     impl PpsDocumentView {
+        /// The drag strip carries no paint, so give it the cursor that tells
+        /// the user it can be dragged, and start from the shared width so every
+        /// tab opens with the sidebar the same size.
+        fn setup_sidebar_resizer(&self) {
+            self.sidebar_resizer
+                .set_cursor_from_name(Some("col-resize"));
+
+            let width = self.settings.int("sidebar-width");
+            self.apply_sidebar_width(width);
+
+            // Follow later changes so tabs opened earlier resize too.
+            self.settings.connect_changed(
+                Some("sidebar-width"),
+                glib::clone!(
+                    #[weak(rename_to = obj)]
+                    self,
+                    move |settings, _| {
+                        obj.apply_sidebar_width(settings.int("sidebar-width"));
+                    }
+                ),
+            );
+        }
+
+        pub(super) fn apply_sidebar_width(&self, width: i32) {
+            let total = self.split_view.width();
+
+            if total > 0 {
+                let clamped = (width as f64).clamp(
+                    self.split_view.min_sidebar_width(),
+                    self.split_view.max_sidebar_width(),
+                );
+
+                self.split_view
+                    .set_sidebar_width_fraction(clamped / total as f64);
+            }
+        }
+
+        pub(super) fn save_sidebar_width(&self) {
+            let _ = self
+                .settings
+                .set_int("sidebar-width", self.sidebar_box.width());
+        }
+
         /// Assemble the zoom menu: the fit modes come from the template, the
         /// percentage presets are built here because Blueprint cannot express
         /// a double-typed action target.
         fn setup_zoom_menu(&self) {
             const PRESETS: [(&str, f64); 10] = [
-                ("50%", 0.5),
-                ("70%", 0.7071067811865475),
-                ("85%", 0.8408964152537145),
-                ("100%", 1.0),
-                ("125%", 1.189207115002721),
-                ("150%", 1.414213562373095),
-                ("175%", 1.681792830507429),
-                ("200%", 2.0),
-                ("300%", 2.828427124746190),
-                ("400%", 4.0),
+                ("50%", 50.),
+                ("70%", 70.),
+                ("85%", 85.),
+                ("100%", 100.),
+                ("125%", 125.),
+                ("150%", 150.),
+                ("175%", 175.),
+                ("200%", 200.),
+                ("300%", 300.),
+                ("400%", 400.),
             ];
 
             let menu = gio::Menu::new();
             menu.append_section(None, &*self.zoom_fit_menu);
 
             let presets = gio::Menu::new();
-            for (label, scale) in PRESETS {
+            for (label, percent) in PRESETS {
                 let item = gio::MenuItem::new(Some(label), None);
-                item.set_action_and_target_value(Some("doc.zoom"), Some(&scale.to_variant()));
+                item.set_action_and_target_value(
+                    Some("doc.zoom-percent"),
+                    Some(&percent.to_variant()),
+                );
                 presets.append_item(&item);
             }
             menu.append_section(None, &presets);

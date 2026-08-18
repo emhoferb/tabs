@@ -25,6 +25,7 @@ mod properties_license;
 mod properties_signatures;
 mod properties_window;
 mod search_box;
+mod style;
 mod sidebar;
 mod sidebar_annotations;
 mod sidebar_annotations_row;

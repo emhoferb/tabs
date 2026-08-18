@@ -42,6 +42,12 @@ mod imp {
 
     #[glib::derived_properties]
     impl ObjectImpl for PpsFindSidebar {
+        fn constructed(&self) {
+            self.parent_constructed();
+
+            crate::style::track_highlight_style(&*self.list_view);
+        }
+
         fn dispose(&self) {
             self.clear_context();
         }

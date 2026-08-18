@@ -281,40 +281,68 @@ window.pps-annotation-window textview {
     background-color: transparent;
 }
 
-/* Outline sidebar: Evince 46 fitted roughly twice as many entries on screen
- * as libadwaita's default navigation-sidebar padding allows. Tighten the rows
- * and the per-level indent so a long table of contents stays scannable. */
-listview.pps-outline > row {
+/* ---------------------------------------------------------------------------
+ * Sidebar lists: outline, search results and thumbnails
+ *
+ * Evince fitted far more of a table of contents on screen than libadwaita's
+ * default navigation-sidebar padding allows, so the rows are tightened - but
+ * not to the point of looking cramped - and the search list is given the same
+ * metrics so the two read as one family.
+ *
+ * Two highlight styles are offered, switched by a class on the widget:
+ * "pps-hl-outline" marks the selection with a coloured border only, and
+ * "pps-hl-fill" fills the row. Both use the accent colour.
+ * ------------------------------------------------------------------------ */
+
+listview.pps-outline > row,
+listview.pps-search > row {
   padding: 0;
   min-height: 0;
 }
 
-listview.pps-outline > row > treeexpander {
-  padding: 1px 2px;
+listview.pps-outline > row > treeexpander,
+listview.pps-search > row > box {
+  padding: 4px 6px;
 }
 
 listview.pps-outline > row > treeexpander > box {
   min-height: 0;
 }
 
-/* Sidebar drag handle. Wider than a hairline so it can actually be grabbed,
- * but drawn as a plain separator so it reads as an edge rather than a control. */
-.pps-sidebar-resizer {
-  min-width: 5px;
+/* Rounded corners sized for the row, not libadwaita's taller default: at this
+ * height the stock radius turns the highlight into a lozenge. */
+listview.pps-outline > row,
+listview.pps-search > row {
+  border-radius: 4px;
 }
 
-.pps-sidebar-resizer:hover {
-  background-color: alpha(currentColor, 0.25);
+/* Border-only selection, the default. */
+listview.pps-hl-outline > row:selected,
+gridview.pps-hl-outline > child:selected {
+  background-color: transparent;
+  background-image: none;
+  color: inherit;
+  box-shadow: inset 0 0 0 2px var(--accent-bg-color);
 }
 
-/* Evince highlighted the current outline entry in the desktop accent colour;
- * libadwaita's navigation-sidebar uses a neutral grey, which makes the current
- * position hard to spot in a long outline. */
-listview.pps-outline > row:selected {
+listview.pps-hl-outline > row:selected:hover,
+gridview.pps-hl-outline > child:selected:hover {
+  background-color: alpha(var(--accent-bg-color), 0.12);
+}
+
+/* Filled selection. */
+listview.pps-hl-fill > row:selected,
+gridview.pps-hl-fill > child:selected {
   background-color: var(--accent-bg-color);
   color: var(--accent-fg-color);
 }
 
-listview.pps-outline > row:selected:hover {
-  background-color: color-mix(in srgb, var(--accent-bg-color) 90%, white);
+/* Thumbnails: mark the selected page with the accent rather than the neutral
+ * default, matching the two lists. */
+pps-sidebar-thumbnails gridview.pps-hl-outline > child:selected picture {
+  border: 2px solid var(--accent-bg-color);
+}
+
+pps-sidebar-thumbnails gridview.pps-hl-fill > child:selected picture {
+  border: 2px solid var(--accent-bg-color);
 }

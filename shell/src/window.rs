@@ -1268,9 +1268,10 @@ mod imp {
 
             self.tab_view.close_page_finish(page, true);
 
-            // Closing the last tab leaves nothing to look at, so fall back to
-            // the start page rather than an empty window.
-            if self.tab_view.n_pages() <= 1 {
+            // Only when nothing is left: n_pages() still counts the page being
+            // closed at this point, so testing for <= 1 sent the window back to
+            // the start page while a perfectly good document was still open.
+            if self.tab_view.n_pages() == 0 {
                 self.stack.set_visible_child_name("start");
             }
 

@@ -190,17 +190,17 @@ template $PpsDocumentView: Adw.BreakpointBin {
         };
       }
 
-      /* Drag handle: AdwOverlaySplitView has no built-in resizer,
-       * so the sidebar width is adjusted by dragging this strip. */
-      Separator sidebar_resizer {
-        orientation: vertical;
-
+      /* Drag handle. Invisible: the split view already draws the edge, and a
+       * second visible strip beside it read as a doubled border. This only
+       * provides a few pixels of grab area and a resize cursor. */
+      Box sidebar_resizer {
         styles [
           "pps-sidebar-resizer",
         ]
 
         GestureDrag {
           drag-begin => $sidebar_resize_begin() swapped;
+          drag-end => $sidebar_resize_end() swapped;
           drag-update => $sidebar_resize_update() swapped;
         }
       }

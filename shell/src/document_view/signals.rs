@@ -689,8 +689,15 @@ impl imp::PpsDocumentView {
 
     #[template_callback]
     pub fn sidebar_resize_begin(&self, _x: f64, _y: f64, _g: &gtk::GestureDrag) {
-        self.sidebar_drag_start_width
-            .set(self.sidebar_box.width());
+        self.sidebar_drag_start_width.set(self.sidebar_box.width());
+
+    }
+
+    #[template_callback]
+    pub fn sidebar_resize_end(&self, _x: f64, _y: f64, _g: &gtk::GestureDrag) {
+        // The sidebar width is shared by every tab, so persist it once the
+        // drag settles rather than on every motion event.
+        self.save_sidebar_width();
     }
 
     /// AdwOverlaySplitView sizes its sidebar from a fraction of the total

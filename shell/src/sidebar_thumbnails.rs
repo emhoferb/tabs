@@ -67,6 +67,8 @@ mod imp {
     #[glib::derived_properties]
     impl ObjectImpl for PpsSidebarThumbnails {
         fn constructed(&self) {
+            crate::style::track_highlight_style(&*self.grid_view);
+
             self.blank_head.set(false);
             self.lru.replace(Some(LruCache::unbounded()));
 

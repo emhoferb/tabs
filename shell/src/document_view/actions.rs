@@ -275,6 +275,27 @@ impl imp::PpsDocumentView {
                     }
                 ))
                 .build(),
+            // doc.zoom takes a raw model scale, which is not the same thing as
+            // a zoom percentage: the model scale is in view units, so 1.0 only
+            // means 100% when the display happens to be at 72 dpi. Selecting
+            // "100%" through it therefore landed somewhere else entirely. Take
+            // a percentage and convert it the same way the readout does.
+            gio::ActionEntryBuilder::new("zoom-percent")
+                .parameter_type(Some(glib::VariantTy::DOUBLE))
+                .activate(glib::clone!(
+                    #[weak(rename_to = obj)]
+                    self,
+                    move |_, _, percent| {
+                        let Some(percent) = percent.and_then(|d| d.get::<f64>()) else {
+                            return;
+                        };
+                        let dpi = Document::misc_get_widget_dpi(obj.obj().as_ref());
+
+                        obj.model.set_sizing_mode(papers_view::SizingMode::Free);
+                        obj.model.set_scale(percent / 100. * dpi / 72.);
+                    }
+                ))
+                .build(),
             gio::ActionEntryBuilder::new("sizing-mode")
                 .parameter_type(Some(glib::VariantTy::STRING))
                 .state(glib::Variant::from("free"))

@@ -34,6 +34,38 @@
     <key name="night-mode" type="b">
       <default>false</default>
     </key>
+    <key name="sidebar-width" type="i">
+      <default>320</default>
+      <summary>Width of the side bar, in pixels.</summary>
+      <description>Shared by every tab so the side bar does not change width when switching between documents.</description>
+    </key>
+    <key name="highlight-style" type="s">
+      <choices>
+        <choice value="fill"/>
+        <choice value="outline"/>
+      </choices>
+      <default>'outline'</default>
+      <summary>How the selected row in the side bar lists is marked.</summary>
+      <description>Either a filled background or just a coloured border, as the search results list uses.</description>
+    </key>
+    <key name="accent-source" type="s">
+      <default>'system'</default>
+      <summary>Where the accent colour comes from.</summary>
+      <description>"system" follows the desktop, "upstream" uses the default blue, anything else names a fixed accent.</description>
+    </key>
+    <key name="keep-outline-expanded" type="b">
+      <default>true</default>
+      <summary>Keep outline sections expanded once they have been opened.</summary>
+      <description>When false, sections collapse again as the document is scrolled past them.</description>
+    </key>
+    <key name="open-in-new-tab" type="b">
+      <default>true</default>
+      <summary>Open further documents in a new tab rather than a new window.</summary>
+    </key>
+    <key name="show-zoom-overlay" type="b">
+      <default>true</default>
+      <summary>Show the floating zoom and annotation controls over the document.</summary>
+    </key>
     <child name="default" schema="org.gnome.Papers.Default"/>
   </schema>
 
