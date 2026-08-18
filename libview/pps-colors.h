@@ -4,7 +4,12 @@
  * Copyright (C) 2025 Markus Göllnitz <camelcasenick@bewares.it>
  */
 
+#include <adwaita.h>
 #include <gtk/gtk.h>
+
+/* Effective accent: the desktop's, or one inferred from the GTK theme name
+ * where the desktop selects its accent by swapping theme variants. */
+AdwAccentColor pps_get_accent_color (void);
 
 void get_accent_color (GdkRGBA *color, GdkRGBA *foreground_color);
 

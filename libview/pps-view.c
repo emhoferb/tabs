@@ -2266,6 +2266,14 @@ handle_link_preview (PpsView *view)
 	gtk_popover_set_pointing_to (GTK_POPOVER (popover), &link_area);
 	gtk_popover_set_autohide (GTK_POPOVER (popover), FALSE);
 
+	/* A hover preview must never take the pointer. It is a native surface
+	 * sitting over the link, so while it is up the windowing system can
+	 * route the press at the link to the popover instead of the view, and
+	 * the click that should have followed the link is swallowed. Keep it
+	 * purely visual; the input region is cleared once it is realized. */
+	gtk_widget_set_can_target (popover, FALSE);
+	gtk_widget_set_can_focus (popover, FALSE);
+
 	spinner = adw_spinner_new ();
 	gtk_popover_set_child (GTK_POPOVER (popover), spinner);
 
@@ -4207,8 +4215,20 @@ static void
 link_preview_delayed_show (PpsView *view)
 {
 	PpsViewPrivate *priv = GET_PRIVATE (view);
+	GdkSurface *surface;
 
 	gtk_popover_popup (GTK_POPOVER (priv->link_preview.popover));
+
+	/* can-target keeps GTK from routing to it, but the surface still exists
+	 * as far as the windowing system is concerned. An empty input region
+	 * makes it transparent to pointer input outright. */
+	surface = gtk_native_get_surface (GTK_NATIVE (priv->link_preview.popover));
+	if (surface) {
+		cairo_region_t *empty = cairo_region_create ();
+
+		gdk_surface_set_input_region (surface, empty);
+		cairo_region_destroy (empty);
+	}
 
 	priv->link_preview.delay_timeout_id = 0;
 }
@@ -4538,6 +4558,7 @@ pps_view_button_press_event (GtkGestureClick *self,
 	gint first_page, last_page;
 
 
+
 	/* A secondary click while a link preview is up pins that preview rather
 	 * than opening the context menu. This has to run before the cleanup
 	 * below, which would otherwise tear the popover down first. */
@@ -4548,7 +4569,14 @@ pps_view_button_press_event (GtkGestureClick *self,
 		return;
 	}
 
-	pps_view_link_preview_popover_cleanup (view);
+	/* Not synchronously: destroying the popover's native surface while GTK
+	 * is dispatching this press makes it re-resolve the pointer target
+	 * mid-sequence, which can cancel the click before ::released fires - and
+	 * link activation lives in the release handler. */
+	if (priv->link_preview.popover && !priv->link_preview.pinned &&
+	    priv->link_preview.cleanup_idle_id == 0)
+		priv->link_preview.cleanup_idle_id =
+		    g_idle_add (link_preview_deferred_cleanup, view);
 
 	if (!document || pps_document_get_n_pages (document) <= 0)
 		return;
@@ -5032,6 +5060,7 @@ pps_view_button_release_event (GtkGestureClick *self,
 		if (annot)
 			pps_view_handle_annotation (view, annot, x, y, time);
 	}
+
 
 	if (priv->selection_info.selections) {
 		g_clear_object (&priv->link_selected);
@@ -6446,6 +6475,11 @@ pps_view_init (PpsView *view)
 	PpsViewPrivate *priv = GET_PRIVATE (view);
 
 	gtk_widget_init_template (GTK_WIDGET (view));
+
+	/* Resolve the accent early: on desktops that select an accent by
+	 * swapping GTK theme variants this also installs the CSS override, and
+	 * it must be in place before the sidebar draws its selection. */
+	pps_get_accent_color ();
 
 
 	priv->start_page = -1;

@@ -15,6 +15,7 @@
 #include <config.h>
 
 #include <adwaita.h>
+#include "pps-colors.h"
 #include <glib/gi18n-lib.h>
 
 enum { PROP_0,
@@ -214,8 +215,7 @@ pps_overlay_annotation_update_css (PpsOverlayAnnotation *overlay)
 {
 	GdkRGBA bg_rgba, accent_color;
 	g_autofree gchar *additional_style, *accent_color_str, *bg_rgba_str, *accent_color_dimmed_str;
-	AdwStyleManager *style_manager = adw_style_manager_get_default ();
-	AdwAccentColor accent = adw_style_manager_get_accent_color (style_manager);
+	AdwAccentColor accent = pps_get_accent_color ();
 	PpsOverlayAnnotationPrivate *priv = OVERLAY_GET_PRIVATE (overlay);
 
 	pps_annotation_get_rgba (priv->annotation, &bg_rgba);

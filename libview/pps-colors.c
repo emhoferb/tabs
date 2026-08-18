@@ -8,14 +8,181 @@
 
 #include <adwaita.h>
 
+/* Some desktops select an accent colour by switching GTK theme variants rather
+ * than by publishing org.freedesktop.appearance accent-color. Ubuntu is the
+ * common case: choosing an accent in Settings swaps the theme between
+ * Yaru, Yaru-red, Yaru-magenta and so on, and nothing appears on the portal.
+ * libadwaita then reports its default, so selections and highlights come out
+ * blue while every other application on the desktop is using the chosen
+ * accent.
+ *
+ * Where the theme name encodes an accent and libadwaita has not been told
+ * otherwise, follow the theme. On a desktop that does publish an accent,
+ * libadwaita reports it and that value wins.
+ */
+static const struct {
+	const char *prefix;
+	AdwAccentColor accent;
+} theme_accents[] = {
+	/* Longest first: every variant also starts with "Yaru". */
+	{ "Yaru-prussiangreen", ADW_ACCENT_COLOR_TEAL },
+	{ "Yaru-viridian", ADW_ACCENT_COLOR_TEAL },
+	{ "Yaru-magenta", ADW_ACCENT_COLOR_PINK },
+	{ "Yaru-purple", ADW_ACCENT_COLOR_PURPLE },
+	{ "Yaru-olive", ADW_ACCENT_COLOR_GREEN },
+	{ "Yaru-sage", ADW_ACCENT_COLOR_GREEN },
+	{ "Yaru-bark", ADW_ACCENT_COLOR_YELLOW },
+	{ "Yaru-blue", ADW_ACCENT_COLOR_BLUE },
+	{ "Yaru-red", ADW_ACCENT_COLOR_RED },
+	{ "Yaru", ADW_ACCENT_COLOR_ORANGE },
+};
+
+static gboolean
+accent_from_theme_string (const char *theme, AdwAccentColor *out)
+{
+	if (!theme)
+		return FALSE;
+
+	for (guint i = 0; i < G_N_ELEMENTS (theme_accents); i++) {
+		if (g_str_has_prefix (theme, theme_accents[i].prefix)) {
+			*out = theme_accents[i].accent;
+			return TRUE;
+		}
+	}
+
+	return FALSE;
+}
+
+/* Read the desktop's GTK theme name.
+ *
+ * GtkSettings is no use inside a sandbox: Flatpak reports "Adwaita-empty" so
+ * that host themes cannot interfere with libadwaita. The settings portal still
+ * carries the real value, so ask it directly, and fall back to GtkSettings for
+ * unsandboxed builds.
+ */
+static char *
+read_desktop_gtk_theme (void)
+{
+	g_autoptr (GDBusConnection) bus = NULL;
+	g_autoptr (GVariant) reply = NULL;
+	g_autoptr (GVariant) value = NULL;
+	GtkSettings *settings;
+	char *theme = NULL;
+
+	bus = g_bus_get_sync (G_BUS_TYPE_SESSION, NULL, NULL);
+	if (bus) {
+		reply = g_dbus_connection_call_sync (
+		    bus,
+		    "org.freedesktop.portal.Desktop",
+		    "/org/freedesktop/portal/desktop",
+		    "org.freedesktop.portal.Settings",
+		    "ReadOne",
+		    g_variant_new ("(ss)", "org.gnome.desktop.interface", "gtk-theme"),
+		    G_VARIANT_TYPE ("(v)"),
+		    G_DBUS_CALL_FLAGS_NONE, 1000, NULL, NULL);
+
+		if (reply) {
+			g_variant_get (reply, "(v)", &value);
+			if (value && g_variant_is_of_type (value, G_VARIANT_TYPE_STRING))
+				return g_variant_dup_string (value, NULL);
+		}
+	}
+
+	settings = gtk_settings_get_default ();
+	if (settings)
+		g_object_get (settings, "gtk-theme-name", &theme, NULL);
+
+	return theme;
+}
+
+static gboolean
+accent_from_theme_name (AdwAccentColor *out)
+{
+	g_autofree char *theme = read_desktop_gtk_theme ();
+
+	return accent_from_theme_string (theme, out);
+}
+
+static gboolean
+resolve_accent (AdwAccentColor *out, gboolean *overridden)
+{
+	AdwStyleManager *style_manager = adw_style_manager_get_default ();
+	AdwAccentColor accent = adw_style_manager_get_accent_color (style_manager);
+	AdwAccentColor from_theme;
+
+	/* Blue is also libadwaita's value when nothing has been published, so it
+	 * is the only case where the theme name is worth consulting. Anything
+	 * else means the desktop stated a preference, which takes precedence. */
+	if (accent == ADW_ACCENT_COLOR_BLUE && accent_from_theme_name (&from_theme)) {
+		*out = from_theme;
+		*overridden = TRUE;
+		return TRUE;
+	}
+
+	*out = accent;
+	*overridden = FALSE;
+	return TRUE;
+}
+
+/* Widgets styled by libadwaita - the sidebar selection above all - take their
+ * colour from the --accent-* CSS variables rather than from this code, and
+ * libadwaita has no setter for the accent. When the accent has been inferred
+ * from the theme, redefine those variables so CSS and rendering agree. */
+static void
+ensure_accent_css (void)
+{
+	static gsize done = 0;
+
+	if (g_once_init_enter (&done)) {
+		AdwAccentColor accent;
+		gboolean overridden = FALSE;
+
+		resolve_accent (&accent, &overridden);
+
+		if (overridden && gdk_display_get_default ()) {
+			GdkRGBA bg;
+			g_autofree char *bg_str = NULL;
+			g_autofree char *css = NULL;
+			GtkCssProvider *provider;
+
+			adw_accent_color_to_rgba (accent, &bg);
+			bg_str = gdk_rgba_to_string (&bg);
+			css = g_strdup_printf (":root {"
+					       "  --accent-bg-color: %s;"
+					       "  --accent-color: %s;"
+					       "  --accent-fg-color: #ffffff;"
+					       "}",
+					       bg_str, bg_str);
+
+			provider = gtk_css_provider_new ();
+			gtk_css_provider_load_from_string (provider, css);
+			gtk_style_context_add_provider_for_display (
+			    gdk_display_get_default (),
+			    GTK_STYLE_PROVIDER (provider),
+			    GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+		}
+
+		g_once_init_leave (&done, 1);
+	}
+}
+
+AdwAccentColor
+pps_get_accent_color (void)
+{
+	AdwAccentColor accent;
+	gboolean overridden;
+
+	ensure_accent_css ();
+	resolve_accent (&accent, &overridden);
+
+	return accent;
+}
+
 void
 get_accent_color (GdkRGBA *background_color, GdkRGBA *foreground_color)
 {
-	if (background_color) {
-		AdwStyleManager *style_manager = adw_style_manager_get_default ();
-		AdwAccentColor accent = adw_style_manager_get_accent_color (style_manager);
-		adw_accent_color_to_rgba (accent, background_color);
-	}
+	if (background_color)
+		adw_accent_color_to_rgba (pps_get_accent_color (), background_color);
 
 	if (foreground_color) {
 		foreground_color->red = 1.0;
@@ -29,9 +196,7 @@ void
 get_selection_color (GtkWidget *widget, GdkRGBA *color)
 {
 	if (gtk_widget_get_state_flags (widget) & GTK_STATE_FLAG_FOCUS_WITHIN) {
-		AdwStyleManager *style_manager = adw_style_manager_get_default ();
-		AdwAccentColor accent = adw_style_manager_get_accent_color (style_manager);
-		adw_accent_color_to_rgba (accent, color);
+		adw_accent_color_to_rgba (pps_get_accent_color (), color);
 		color->alpha *= 0.3;
 	} else {
 		gtk_widget_get_color (widget, color);

@@ -306,3 +306,15 @@ listview.pps-outline > row > treeexpander > box {
 .pps-sidebar-resizer:hover {
   background-color: alpha(currentColor, 0.25);
 }
+
+/* Evince highlighted the current outline entry in the desktop accent colour;
+ * libadwaita's navigation-sidebar uses a neutral grey, which makes the current
+ * position hard to spot in a long outline. */
+listview.pps-outline > row:selected {
+  background-color: var(--accent-bg-color);
+  color: var(--accent-fg-color);
+}
+
+listview.pps-outline > row:selected:hover {
+  background-color: color-mix(in srgb, var(--accent-bg-color) 90%, white);
+}
