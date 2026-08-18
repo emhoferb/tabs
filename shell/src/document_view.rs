@@ -66,6 +66,15 @@ mod imp {
         pub(super) sidebar_box: TemplateChild<gtk::Box>,
         #[template_child]
         pub(super) sidebar_resizer: TemplateChild<gtk::Separator>,
+        #[template_child]
+        pub(super) narrow_breakpoint: TemplateChild<adw::Breakpoint>,
+        #[template_child]
+        pub(super) very_narrow_breakpoint: TemplateChild<adw::Breakpoint>,
+        /// Whether the narrow-window breakpoints are currently installed.
+        pub(super) breakpoints_installed: Cell<bool>,
+        /// Timestamp of the last live width applied during a drag, to keep the
+        /// document and thumbnails from re-flowing on every motion event.
+        pub(super) last_resize_apply: Cell<i64>,
         /// Sidebar width when the current resize drag started, in pixels.
         pub(super) sidebar_drag_start_width: Cell<i32>,
         #[template_child]
@@ -356,10 +365,19 @@ mod imp {
             self.sidebar_resizer
                 .set_cursor_from_name(Some("col-resize"));
 
-            let width = self.settings.int("sidebar-width");
-            self.apply_sidebar_width(width);
+            // Not here: nothing is allocated yet during construction, so
+            // split_view.width() is zero and the fraction cannot be computed.
+            // A tab opened later would then ignore the shared width until
+            // something else resized it.
+            self.obj().connect_map(glib::clone!(
+                #[weak(rename_to = obj)]
+                self,
+                move |_| {
+                    obj.apply_sidebar_width(obj.settings.int("sidebar-width"));
+                }
+            ));
 
-            // Follow later changes so tabs opened earlier resize too.
+            // Follow later changes so every open tab tracks the same width.
             self.settings.connect_changed(
                 Some("sidebar-width"),
                 glib::clone!(
@@ -370,6 +388,41 @@ mod imp {
                     }
                 ),
             );
+
+            self.breakpoints_installed.set(true);
+            self.apply_collapse_setting();
+            self.settings.connect_changed(
+                Some("collapse-sidebar-when-narrow"),
+                glib::clone!(
+                    #[weak(rename_to = obj)]
+                    self,
+                    move |_, _| obj.apply_collapse_setting()
+                ),
+            );
+        }
+
+        /// Install or remove the narrow-window breakpoints. AdwBreakpointBin has
+        /// no way to disable a breakpoint, so honouring the preference means
+        /// taking them out of the bin and putting them back.
+        fn apply_collapse_setting(&self) {
+            let want = self.settings.boolean("collapse-sidebar-when-narrow");
+
+            if want == self.breakpoints_installed.get() {
+                return;
+            }
+
+            let obj = self.obj();
+
+            if want {
+                obj.add_breakpoint(self.narrow_breakpoint.clone());
+                obj.add_breakpoint(self.very_narrow_breakpoint.clone());
+            } else {
+                obj.remove_breakpoint(&*self.narrow_breakpoint);
+                obj.remove_breakpoint(&*self.very_narrow_breakpoint);
+                self.split_view.set_collapsed(false);
+            }
+
+            self.breakpoints_installed.set(want);
         }
 
         pub(super) fn apply_sidebar_width(&self, width: i32) {
@@ -383,7 +436,36 @@ mod imp {
 
                 self.split_view
                     .set_sidebar_width_fraction(clamped / total as f64);
+                return;
             }
+
+            // Not allocated yet, so the fraction cannot be worked out. This is
+            // the case for a tab created and mapped in one go, which is why a
+            // newly opened tab used to ignore the shared width until something
+            // resized it. Retry on the next frames until the width is known.
+            let tries = Cell::new(30);
+
+            self.split_view.add_tick_callback(move |split_view, _| {
+                let total = split_view.width();
+
+                if total > 0 {
+                    let clamped = (width as f64).clamp(
+                        split_view.min_sidebar_width(),
+                        split_view.max_sidebar_width(),
+                    );
+
+                    split_view.set_sidebar_width_fraction(clamped / total as f64);
+                    return glib::ControlFlow::Break;
+                }
+
+                tries.set(tries.get() - 1);
+
+                if tries.get() <= 0 {
+                    glib::ControlFlow::Break
+                } else {
+                    glib::ControlFlow::Continue
+                }
+            });
         }
 
         pub(super) fn save_sidebar_width(&self) {

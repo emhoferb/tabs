@@ -58,6 +58,11 @@
       <summary>Keep outline sections expanded once they have been opened.</summary>
       <description>When false, sections collapse again as the document is scrolled past them.</description>
     </key>
+    <key name="collapse-sidebar-when-narrow" type="b">
+      <default>true</default>
+      <summary>Collapse the side bar automatically in a narrow window.</summary>
+      <description>When false the side bar keeps its width however narrow the window becomes.</description>
+    </key>
     <key name="open-in-new-tab" type="b">
       <default>true</default>
       <summary>Open further documents in a new tab rather than a new window.</summary>

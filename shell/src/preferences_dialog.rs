@@ -34,6 +34,8 @@ mod imp {
         #[template_child]
         pub(super) accent_row: TemplateChild<adw::ComboRow>,
         #[template_child]
+        pub(super) collapse_sidebar_row: TemplateChild<adw::SwitchRow>,
+        #[template_child]
         pub(super) zoom_overlay_row: TemplateChild<adw::SwitchRow>,
         #[template_child]
         pub(super) keep_expanded_row: TemplateChild<adw::SwitchRow>,
@@ -47,6 +49,7 @@ mod imp {
             Self {
                 highlight_row: Default::default(),
                 accent_row: Default::default(),
+                collapse_sidebar_row: Default::default(),
                 zoom_overlay_row: Default::default(),
                 keep_expanded_row: Default::default(),
                 new_tab_row: Default::default(),
@@ -107,6 +110,12 @@ mod imp {
                 }
             ));
 
+            s.bind(
+                "collapse-sidebar-when-narrow",
+                &*self.collapse_sidebar_row,
+                "active",
+            )
+            .build();
             s.bind("show-zoom-overlay", &*self.zoom_overlay_row, "active")
                 .build();
             s.bind("keep-outline-expanded", &*self.keep_expanded_row, "active")

@@ -712,6 +712,17 @@ impl imp::PpsDocumentView {
     /// somewhere the widget would refuse to render.
     #[template_callback]
     pub fn sidebar_resize_update(&self, offset_x: f64, _offset_y: f64, _g: &gtk::GestureDrag) {
+        // Every width change re-flows the document and regenerates the
+        // thumbnail grid, which is expensive enough to show as flicker if it
+        // runs on every motion event. Live feedback only needs to keep up with
+        // the eye, so limit it; the exact width is applied on release.
+        let now = glib::monotonic_time();
+
+        if now - self.last_resize_apply.get() < 60_000 {
+            return;
+        }
+
+        self.last_resize_apply.set(now);
         self.apply_sidebar_drag(offset_x);
     }
 

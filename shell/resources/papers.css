@@ -351,7 +351,12 @@ pps-sidebar-thumbnails gridview.pps-hl-fill > child:selected picture {
  * painted away because the split view already draws the edge — painting here
  * too reads as a doubled border. */
 .pps-sidebar-resizer {
-  min-width: 6px;
+  /* Wider than it looks: the strip is invisible, and a hairline target is
+   * frustrating to hit. Most of the width sits outboard of the visible edge,
+   * so the cursor changes just before reaching it from the document side and
+   * only a little of the sidebar's own last column is consumed. */
+  min-width: 12px;
+  margin-left: -4px;
   background: none;
   background-image: none;
   border: none;

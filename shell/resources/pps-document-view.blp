@@ -39,7 +39,7 @@ Gio.Settings settings {
 }
 
 template $PpsDocumentView: Adw.BreakpointBin {
-  Adw.Breakpoint {
+  Adw.Breakpoint narrow_breakpoint {
     condition ("max-width: 720sp")
 
     setters {
@@ -47,7 +47,7 @@ template $PpsDocumentView: Adw.BreakpointBin {
     }
   }
 
-  Adw.Breakpoint {
+  Adw.Breakpoint very_narrow_breakpoint {
     condition ("max-width: 540sp")
 
     setters {

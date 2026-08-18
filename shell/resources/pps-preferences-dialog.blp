@@ -50,6 +50,11 @@ template $PpsPreferencesDialog: Adw.PreferencesDialog {
     Adw.PreferencesGroup {
       title: _("Document View");
 
+      Adw.SwitchRow collapse_sidebar_row {
+        title: _("Collapse Sidebar in Narrow Windows");
+        subtitle: _("When off, the sidebar keeps its width however narrow the window gets");
+      }
+
       Adw.SwitchRow zoom_overlay_row {
         title: _("Floating Controls");
         subtitle: _("Zoom and annotation buttons over the page (Ctrl+H)");
