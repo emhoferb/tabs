@@ -332,8 +332,16 @@ mod imp {
         pub(super) action_group: TemplateChild<gio::SimpleActionGroup>,
         #[property(name = "model", nullable, get)]
         pub(super) outlines: RefCell<Option<gio::ListModel>>,
-        /// A cache maps from page number to the corresponding path
-        page_map: RefCell<BTreeMap<usize, TreePath>>,
+        /// A cache mapping a page number to the outline entries that start on
+        /// it, in document order. A page routinely holds several sections, so
+        /// this cannot be one path per page: keeping only the last meant that
+        /// arriving at a page selected its *final* subsection, skipping the
+        /// ones above it.
+        page_map: RefCell<BTreeMap<usize, Vec<TreePath>>>,
+        /// The entry the user last activated, and the page it went to. Held so
+        /// that the page-changed which follows navigation does not immediately
+        /// move the selection to a different section on the same page.
+        activated: RefCell<Option<(usize, TreePath)>>,
         path_data: RefCell<PathData>,
         sig_handlers: RefCell<HashMap<gtk::TreeListRow, SignalHandlerId>>,
         timeout_id: RefCell<Option<glib::SourceId>>,
@@ -553,7 +561,24 @@ mod imp {
 
         fn outlines_to_path(&self, outlines: &Outlines) -> Option<TreePath> {
             let page = self.outlines_to_page(outlines);
-            self.page_map.borrow().get(&page).cloned()
+            self.page_map
+                .borrow()
+                .get(&page)
+                .and_then(|paths| paths.first())
+                .cloned()
+        }
+
+        /// The path of a specific outline entry, matched by identity rather
+        /// than by page, so that sections sharing a page stay distinguishable.
+        fn selected_path_for(&self, outlines: &Outlines) -> Option<TreePath> {
+            self.selection_model
+                .selected_item()
+                .and_downcast::<gtk::TreeListRow>()
+                .and_then(|row| row.item())
+                .and_downcast::<Outlines>()
+                .filter(|selected| selected == outlines)
+                .and_then(|_| self.current_path())
+                .or_else(|| self.outlines_to_path(outlines))
         }
 
         fn current_path(&self) -> Option<TreePath> {
@@ -570,8 +595,36 @@ mod imp {
 
             let upper = (page + 1) as usize;
 
-            // Calculate the best fit page
-            if let Some((&page, path)) = self.page_map.borrow().range(..upper).next_back() {
+            // An entry the user just clicked wins over anything derived from
+            // the page number, and does so exactly once. Several sections
+            // commonly share a page, and the destination often sits near a page
+            // boundary, so the page reported after navigating is frequently not
+            // the clicked entry's own page - matching on it would let the
+            // selection slide onto a neighbour. Consume the pin instead, so the
+            // click stands and the next genuine scroll takes over.
+            let pinned = self
+                .activated
+                .replace(None)
+                .map(|(_, path)| path);
+
+            // Otherwise the first section starting on this page, since the page
+            // change fires as its top comes into view; failing that, the last
+            // section before it, which is still the enclosing one.
+            let derived = pinned.or_else(|| {
+                let map = self.page_map.borrow();
+
+                map.get(&(page as usize))
+                    .and_then(|paths| paths.first())
+                    .cloned()
+                    .or_else(|| {
+                        map.range(..upper)
+                            .next_back()
+                            .and_then(|(_, paths)| paths.last())
+                            .cloned()
+                    })
+            });
+
+            if let Some(path) = derived.as_ref() {
                 debug!("set current selected page to {page}, row position {path}");
 
                 let current_path = self.current_path();
@@ -745,7 +798,11 @@ mod imp {
                         self.path_data.borrow_mut().expand_by_producer(path);
                     }
 
-                    self.page_map.borrow_mut().insert(page, path.clone());
+                    self.page_map
+                        .borrow_mut()
+                        .entry(page)
+                        .or_default()
+                        .push(path.clone());
 
                     true
                 },
@@ -773,6 +830,15 @@ mod imp {
                 if let Some(link) = outlines.link() {
                     debug!("link activated: `{}`", link.title().unwrap_or_default());
 
+                    // Remember what was clicked. Navigation emits page-changed
+                    // asynchronously, well after the guard below has lifted, and
+                    // without this the selection would jump to whichever section
+                    // sits last on the destination page.
+                    let page = self.outlines_to_page(&outlines);
+                    if let Some(path) = self.selected_path_for(&outlines) {
+                        self.activated.replace(Some((page, path)));
+                    }
+
                     self.block_page_changed.set(true);
                     self.obj().emit_by_name::<()>("link-activated", &[&link]);
                     self.obj().navigate_to_view();
@@ -795,6 +861,14 @@ mod imp {
         }
 
         fn sidebar_collapse(&self, current_path: Option<&TreePath>) {
+            // Sections auto-expand as the document is scrolled into them. By
+            // default they now stay open: having them snap shut again as soon
+            // as the reader moves past makes the outline appear to rearrange
+            // itself underneath the cursor.
+            if gio::Settings::new("org.gnome.Papers").boolean("keep-outline-expanded") {
+                return;
+            }
+
             if let Some(tree_model) = self.tree_model() {
                 let model = tree_model.model();
 
