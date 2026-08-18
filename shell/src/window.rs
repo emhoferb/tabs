@@ -13,7 +13,6 @@ use papers_view::JobLoad;
 use papers_view::JobPriority;
 use papers_view::SizingMode;
 
-use crate::application::spawn;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub enum WindowRunMode {
@@ -1318,7 +1317,10 @@ mod imp {
                                 || !obj.settings.boolean("open-in-new-tab");
 
                             if want_window {
-                                spawn(Some(&f), None, None);
+                                let win = super::PpsWindow::default();
+
+                                win.open(&f, None, None);
+                                win.present();
                             } else {
                                 obj.open_in_new_tab.set(true);
                                 obj.open(&f, None, None);
@@ -1531,6 +1533,19 @@ impl PpsWindow {
 
     pub fn print_range(&self, first_page: i32, last_page: i32) {
         self.imp().document_view().print_range(first_page, last_page);
+    }
+
+    /// Load a document into a new tab of this window.
+    pub fn open_in_new_tab(
+        &self,
+        file: &gio::File,
+        dest: Option<&papers_document::LinkDest>,
+        mode: Option<WindowRunMode>,
+    ) {
+        let imp = self.imp();
+
+        imp.open_in_new_tab.set(true);
+        imp.open(file, dest, mode);
     }
 
     pub fn open_copy(

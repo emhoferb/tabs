@@ -184,10 +184,38 @@ mod imp {
 
             if n_window != 0 && window.is_none() {
                 // There are windows, but they hold a different document.
-                // Since we don't have security between documents, then
-                // spawn a new process! See:
+                //
+                // Upstream always spawns a separate process here, so that two
+                // documents never share one, deliberately:
                 // https://gitlab.gnome.org/GNOME/papers/-/issues/104
-                spawn(Some(file), dest, mode);
+                //
+                // Tabs are incompatible with that by construction, so the
+                // preference decides. Choosing tabs accepts that documents open
+                // together share a process.
+                let prefer_tab = gio::Settings::new("org.gnome.Papers").boolean("open-in-new-tab");
+
+                if prefer_tab {
+                    if let Some(w) = obj
+                        .active_window()
+                        .and_then(|w| w.downcast::<PpsWindow>().ok())
+                        .or_else(|| {
+                            obj.windows()
+                                .into_iter()
+                                .find_map(|w| w.downcast::<PpsWindow>().ok())
+                        })
+                    {
+                        w.open_in_new_tab(file, dest, mode);
+                        w.present();
+                        return;
+                    }
+                }
+
+                // A fresh window in this process. Spawning would re-enter the
+                // running instance and come straight back here.
+                let w = PpsWindow::default();
+
+                w.open(file, dest, mode);
+                w.present();
                 return;
             }
 
@@ -468,9 +496,16 @@ impl Default for PpsApplication {
 
 impl PpsApplication {
     pub fn new() -> Self {
-        let flags = gio::ApplicationFlags::HANDLES_COMMAND_LINE
-            | gio::ApplicationFlags::NON_UNIQUE
-            | gio::ApplicationFlags::HANDLES_OPEN;
+        // Upstream marks the application NON_UNIQUE so that every document
+        // gets its own process, isolating them from each other:
+        // https://gitlab.gnome.org/GNOME/papers/-/issues/104
+        //
+        // Tabs give that up within a window anyway, and a second launch has to
+        // reach the running instance for a document opened from the file
+        // manager to become a tab in it. So the application is unique here, and
+        // "new window" creates a window in-process rather than spawning.
+        let flags =
+            gio::ApplicationFlags::HANDLES_COMMAND_LINE | gio::ApplicationFlags::HANDLES_OPEN;
 
         glib::Object::builder()
             .property("application-id", APP_ID)
