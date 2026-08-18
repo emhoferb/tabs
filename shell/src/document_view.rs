@@ -373,7 +373,7 @@ mod imp {
             // right of its hotspot, so coming from the document side the cursor
             // visually overlaps the edge long before the hotspot reaches it.
             const GRAB_INSIDE: f64 = 2.0;
-            const GRAB_OUTSIDE: f64 = 22.0;
+            const GRAB_OUTSIDE: f64 = 11.0;
 
             let in_zone = glib::clone!(
                 #[weak(rename_to = obj)]
@@ -464,41 +464,44 @@ mod imp {
             // split_view.width() is zero and the fraction cannot be computed.
             // A tab opened later would then ignore the shared width until
             // something else resized it.
-            // The split view stores a *fraction*, so a pixel width has to be
-            // converted against its current width. Doing that once is not
-            // enough: during initial allocation the split view is briefly a
-            // different size, and a fraction derived then is wrong forever
-            // after - which is how a 324px sidebar ended up 251px wide. Re-derive
-            // it whenever the split view's width changes, which also keeps the
-            // sidebar a constant pixel width as the window is resized.
-            // The split view stores a *fraction*, so a pixel width has to be
-            // converted against its current width. Doing that once is not
-            // enough: during initial allocation the split view is briefly a
-            // different size, and a fraction derived then is wrong for good -
-            // which is how a 324px sidebar ended up 251px wide. Keep it in step
-            // with a tick callback, which also holds the sidebar at a constant
-            // pixel width as the window is resized.
+            // The split view stores a *fraction* of its own width, so a stored
+            // pixel width has to be converted against it. Doing that during
+            // initial allocation gets the wrong answer: the split view is
+            // briefly a different size, and the fraction derived then is wrong
+            // for good - a 324px sidebar settled at 251px.
+            //
+            // So wait for the width to stop changing, apply once, and stop.
+            // Holding a fixed pixel width instead would fight the window as it
+            // is resized; letting the fraction stand keeps the proportional
+            // behaviour, where the sidebar narrows with the window.
+            let last_total = Cell::new(-1);
+            let frames = Cell::new(0);
+
             self.split_view.add_tick_callback(glib::clone!(
                 #[weak(rename_to = obj)]
                 self,
                 #[upgrade_or]
                 glib::ControlFlow::Break,
                 move |split_view, _| {
-                    if obj.sidebar_dragging.get() {
+                    let total = split_view.width();
+
+                    frames.set(frames.get() + 1);
+                    if frames.get() > 120 {
+                        return glib::ControlFlow::Break;
+                    }
+
+                    if total <= 0 {
                         return glib::ControlFlow::Continue;
                     }
 
-                    let total = split_view.width();
-                    if total > 0 {
-                        let want = (obj.settings.int("sidebar-width") as f64).clamp(150., 650.);
-                        let actual = obj.sidebar_box.width() as f64;
-
-                        if (actual - want).abs() > 1.0 {
-                            split_view.set_sidebar_width_fraction(want / total as f64);
-                        }
+                    if total != last_total.get() {
+                        last_total.set(total);
+                        return glib::ControlFlow::Continue;
                     }
 
-                    glib::ControlFlow::Continue
+                    obj.apply_sidebar_width(obj.settings.int("sidebar-width"));
+
+                    glib::ControlFlow::Break
                 }
             ));
 
