@@ -65,7 +65,7 @@ mod imp {
         #[template_child]
         pub(super) sidebar_box: TemplateChild<gtk::Box>,
         #[template_child]
-        pub(super) sidebar_resizer: TemplateChild<gtk::Box>,
+        pub(super) sidebar_resizer: TemplateChild<gtk::Separator>,
         /// Sidebar width when the current resize drag started, in pixels.
         pub(super) sidebar_drag_start_width: Cell<i32>,
         #[template_child]

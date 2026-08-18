@@ -193,7 +193,13 @@ template $PpsDocumentView: Adw.BreakpointBin {
       /* Drag handle. Invisible: the split view already draws the edge, and a
        * second visible strip beside it read as a doubled border. This only
        * provides a few pixels of grab area and a resize cursor. */
-      Box sidebar_resizer {
+      /* Deliberately a Separator, not a Box: GtkBox treats a <child> as a
+       * widget to pack, so the gesture below is silently dropped and the
+       * handle becomes undraggable. GtkSeparator leaves it to GtkWidget,
+       * which adds it as an event controller. It is painted away in CSS. */
+      Separator sidebar_resizer {
+        orientation: vertical;
+
         styles [
           "pps-sidebar-resizer",
         ]
