@@ -688,63 +688,6 @@ impl imp::PpsDocumentView {
     }
 
     #[template_callback]
-    pub fn sidebar_resize_begin(&self, _x: f64, _y: f64, _g: &gtk::GestureDrag) {
-        self.sidebar_drag_start_width.set(self.sidebar_box.width());
-
-    }
-
-    #[template_callback]
-    pub fn sidebar_resize_end(&self, offset_x: f64, _y: f64, _g: &gtk::GestureDrag) {
-        // Apply the full offset here rather than trusting the live updates.
-        // Re-allocating the sidebar moves the handle out from under the
-        // pointer mid-gesture, so the stream of drag-update offsets stops
-        // early and the sidebar ends up short of where it was dragged to.
-        self.apply_sidebar_drag(offset_x);
-
-        // Shared by every tab, so persist once the drag settles rather than on
-        // every motion event.
-        self.save_sidebar_width();
-    }
-
-    /// AdwOverlaySplitView sizes its sidebar from a fraction of the total
-    /// width, so a drag is applied by recomputing that fraction. The result is
-    /// clamped to the split view's own min/max so the handle cannot be dragged
-    /// somewhere the widget would refuse to render.
-    #[template_callback]
-    pub fn sidebar_resize_update(&self, offset_x: f64, _offset_y: f64, _g: &gtk::GestureDrag) {
-        // Every width change re-flows the document and regenerates the
-        // thumbnail grid, which is expensive enough to show as flicker if it
-        // runs on every motion event. Live feedback only needs to keep up with
-        // the eye, so limit it; the exact width is applied on release.
-        let now = glib::monotonic_time();
-
-        if now - self.last_resize_apply.get() < 60_000 {
-            return;
-        }
-
-        self.last_resize_apply.set(now);
-        self.apply_sidebar_drag(offset_x);
-    }
-
-    /// AdwOverlaySplitView sizes its sidebar from a fraction of the total
-    /// width, so a drag is applied by recomputing that fraction, clamped to the
-    /// widget's own min/max.
-    fn apply_sidebar_drag(&self, offset_x: f64) {
-        let total = self.split_view.width();
-        if total <= 0 {
-            return;
-        }
-
-        let wanted = (self.sidebar_drag_start_width.get() as f64 + offset_x).clamp(
-            self.split_view.min_sidebar_width(),
-            self.split_view.max_sidebar_width(),
-        );
-
-        self.split_view
-            .set_sidebar_width_fraction(wanted / total as f64);
-    }
-
-    #[template_callback]
     pub fn zoom_changed(&self, _: glib::ParamSpec, model: DocumentModel) {
         let is_free = model.sizing_mode() == SizingMode::Free;
 

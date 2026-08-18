@@ -65,18 +65,13 @@ mod imp {
         #[template_child]
         pub(super) sidebar_box: TemplateChild<gtk::Box>,
         #[template_child]
-        pub(super) sidebar_resizer: TemplateChild<gtk::Separator>,
-        #[template_child]
         pub(super) narrow_breakpoint: TemplateChild<adw::Breakpoint>,
         #[template_child]
         pub(super) very_narrow_breakpoint: TemplateChild<adw::Breakpoint>,
         /// Whether the narrow-window breakpoints are currently installed.
         pub(super) breakpoints_installed: Cell<bool>,
-        /// Timestamp of the last live width applied during a drag, to keep the
-        /// document and thumbnails from re-flowing on every motion event.
-        pub(super) last_resize_apply: Cell<i64>,
-        /// Sidebar width when the current resize drag started, in pixels.
-        pub(super) sidebar_drag_start_width: Cell<i32>,
+        /// Whether a sidebar resize drag is in progress.
+        pub(super) sidebar_dragging: Cell<bool>,
         #[template_child]
         pub(super) banner: TemplateChild<adw::Banner>,
 
@@ -358,22 +353,152 @@ mod imp {
     impl WidgetImpl for PpsDocumentView {}
 
     impl PpsDocumentView {
-        /// The drag strip carries no paint, so give it the cursor that tells
-        /// the user it can be dragged, and start from the shared width so every
-        /// tab opens with the sidebar the same size.
+        /// Sidebar resizing.
+        ///
+        /// The controllers go on the split view, not on a strip inside the
+        /// sidebar, for two reasons.
+        ///
+        /// A widget inside the sidebar moves as the sidebar is resized, so the
+        /// pointer's position *relative to it* changes even while the pointer
+        /// is still. Feeding that back in as a drag offset makes the width
+        /// oscillate: the wobble seen while dragging. The split view does not
+        /// move, so a width taken from the pointer's position within it is
+        /// stable — which is how GtkPaned, and therefore Evince, stays smooth.
+        ///
+        /// It also frees the grab zone from the sidebar's bounds, so it can
+        /// reach well into the document side where there is room, while barely
+        /// intruding on the sidebar's own last column.
         fn setup_sidebar_resizer(&self) {
-            self.sidebar_resizer
-                .set_cursor_from_name(Some("col-resize"));
+            // Asymmetric on purpose: a pointer arrow is drawn down and to the
+            // right of its hotspot, so coming from the document side the cursor
+            // visually overlaps the edge long before the hotspot reaches it.
+            const GRAB_INSIDE: f64 = 2.0;
+            const GRAB_OUTSIDE: f64 = 22.0;
+
+            let in_zone = glib::clone!(
+                #[weak(rename_to = obj)]
+                self,
+                #[upgrade_or]
+                false,
+                move |x: f64| {
+                    let edge = obj.sidebar_box.width() as f64;
+
+                    !obj.split_view.is_collapsed()
+                        && obj.split_view.shows_sidebar()
+                        && x > edge - GRAB_INSIDE
+                        && x < edge + GRAB_OUTSIDE
+                }
+            );
+
+            // Cursor feedback.
+            let motion = gtk::EventControllerMotion::new();
+            motion.connect_motion(glib::clone!(
+                #[weak(rename_to = obj)]
+                self,
+                #[strong]
+                in_zone,
+                move |_, x, _| {
+                    obj.split_view.set_cursor_from_name(if in_zone(x) {
+                        Some("col-resize")
+                    } else {
+                        None
+                    });
+                }
+            ));
+            self.split_view.add_controller(motion);
+
+            let drag = gtk::GestureDrag::new();
+            drag.set_propagation_phase(gtk::PropagationPhase::Capture);
+
+            drag.connect_drag_begin(glib::clone!(
+                #[weak(rename_to = obj)]
+                self,
+                #[strong]
+                in_zone,
+                move |gesture, x, _| {
+                    if in_zone(x) {
+                        obj.sidebar_dragging.set(true);
+                        gesture.set_state(gtk::EventSequenceState::Claimed);
+                    } else {
+                        obj.sidebar_dragging.set(false);
+                        gesture.set_state(gtk::EventSequenceState::Denied);
+                    }
+                }
+            ));
+
+            drag.connect_drag_update(glib::clone!(
+                #[weak(rename_to = obj)]
+                self,
+                move |gesture, offset_x, _| {
+                    if !obj.sidebar_dragging.get() {
+                        return;
+                    }
+
+                    if let Some((start_x, _)) = gesture.start_point() {
+                        // Absolute pointer position inside the split view: it
+                        // does not move, so there is no feedback loop.
+                        obj.set_sidebar_width_px(start_x + offset_x);
+                    }
+                }
+            ));
+
+            drag.connect_drag_end(glib::clone!(
+                #[weak(rename_to = obj)]
+                self,
+                move |gesture, offset_x, _| {
+                    if !obj.sidebar_dragging.replace(false) {
+                        return;
+                    }
+
+                    if let Some((start_x, _)) = gesture.start_point() {
+                        obj.set_sidebar_width_px(start_x + offset_x);
+                    }
+
+                    obj.release_sidebar_width();
+                    obj.save_sidebar_width();
+                }
+            ));
+            self.split_view.add_controller(drag);
 
             // Not here: nothing is allocated yet during construction, so
             // split_view.width() is zero and the fraction cannot be computed.
             // A tab opened later would then ignore the shared width until
             // something else resized it.
-            self.obj().connect_map(glib::clone!(
+            // The split view stores a *fraction*, so a pixel width has to be
+            // converted against its current width. Doing that once is not
+            // enough: during initial allocation the split view is briefly a
+            // different size, and a fraction derived then is wrong forever
+            // after - which is how a 324px sidebar ended up 251px wide. Re-derive
+            // it whenever the split view's width changes, which also keeps the
+            // sidebar a constant pixel width as the window is resized.
+            // The split view stores a *fraction*, so a pixel width has to be
+            // converted against its current width. Doing that once is not
+            // enough: during initial allocation the split view is briefly a
+            // different size, and a fraction derived then is wrong for good -
+            // which is how a 324px sidebar ended up 251px wide. Keep it in step
+            // with a tick callback, which also holds the sidebar at a constant
+            // pixel width as the window is resized.
+            self.split_view.add_tick_callback(glib::clone!(
                 #[weak(rename_to = obj)]
                 self,
-                move |_| {
-                    obj.apply_sidebar_width(obj.settings.int("sidebar-width"));
+                #[upgrade_or]
+                glib::ControlFlow::Break,
+                move |split_view, _| {
+                    if obj.sidebar_dragging.get() {
+                        return glib::ControlFlow::Continue;
+                    }
+
+                    let total = split_view.width();
+                    if total > 0 {
+                        let want = (obj.settings.int("sidebar-width") as f64).clamp(150., 650.);
+                        let actual = obj.sidebar_box.width() as f64;
+
+                        if (actual - want).abs() > 1.0 {
+                            split_view.set_sidebar_width_fraction(want / total as f64);
+                        }
+                    }
+
+                    glib::ControlFlow::Continue
                 }
             ));
 
@@ -427,45 +552,39 @@ mod imp {
 
         pub(super) fn apply_sidebar_width(&self, width: i32) {
             let total = self.split_view.width();
-
-            if total > 0 {
-                let clamped = (width as f64).clamp(
-                    self.split_view.min_sidebar_width(),
-                    self.split_view.max_sidebar_width(),
-                );
-
-                self.split_view
-                    .set_sidebar_width_fraction(clamped / total as f64);
+            if total <= 0 {
                 return;
             }
 
-            // Not allocated yet, so the fraction cannot be worked out. This is
-            // the case for a tab created and mapped in one go, which is why a
-            // newly opened tab used to ignore the shared width until something
-            // resized it. Retry on the next frames until the width is known.
-            let tries = Cell::new(30);
+            let width = (width as f64).clamp(150., 650.);
 
-            self.split_view.add_tick_callback(move |split_view, _| {
-                let total = split_view.width();
+            self.split_view
+                .set_sidebar_width_fraction(width / total as f64);
+        }
 
-                if total > 0 {
-                    let clamped = (width as f64).clamp(
-                        split_view.min_sidebar_width(),
-                        split_view.max_sidebar_width(),
-                    );
+        /// Pin the sidebar to an exact pixel width.
+        ///
+        /// Setting only the fraction leaves the final width to rounding inside
+        /// the split view, which is another source of jitter while dragging.
+        /// Clamping min and max to the same value makes it exact.
+        fn set_sidebar_width_px(&self, width: f64) {
+            let total = self.split_view.width();
+            if total <= 0 {
+                return;
+            }
 
-                    split_view.set_sidebar_width_fraction(clamped / total as f64);
-                    return glib::ControlFlow::Break;
-                }
+            let width = width.clamp(150., 650.).round();
 
-                tries.set(tries.get() - 1);
+            self.split_view.set_min_sidebar_width(width);
+            self.split_view.set_max_sidebar_width(width);
+            self.split_view
+                .set_sidebar_width_fraction(width / total as f64);
+        }
 
-                if tries.get() <= 0 {
-                    glib::ControlFlow::Break
-                } else {
-                    glib::ControlFlow::Continue
-                }
-            });
+        /// Restore the configured bounds after a drag, keeping the width.
+        fn release_sidebar_width(&self) {
+            self.split_view.set_min_sidebar_width(150.);
+            self.split_view.set_max_sidebar_width(650.);
         }
 
         pub(super) fn save_sidebar_width(&self) {
