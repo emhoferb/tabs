@@ -455,14 +455,43 @@ mod imp {
             debug!("set current selected page to {store_index}");
 
             if self.obj().is_mapped() && self.list_store.n_items() > 0 {
-                self.grid_view.scroll_to(
-                    store_index as u32,
-                    gtk::ListScrollFlags::FOCUS | gtk::ListScrollFlags::SELECT,
-                    None,
-                );
+                // Not scroll_to(FOCUS|SELECT): that always scrolls, and the
+                // focus move scrolls a second time once the cell is realized,
+                // which is the down-up "jump" at the viewport edges. Select
+                // through the model and move the adjustment only when the
+                // selected row is actually outside the view, by the minimal
+                // amount - Evince's behaviour.
+                self.selection_model.set_selected(store_index as u32);
+                self.reveal_minimally(store_index as u32);
             }
 
             self.block_activate.set(false);
+        }
+
+        /// Scroll just far enough for `store_index` to be fully visible.
+        fn reveal_minimally(&self, store_index: u32) {
+            let Some(vadj) = self.grid_view.vadjustment() else {
+                return;
+            };
+
+            let columns = self.grid_view.max_columns().max(1);
+            let items = self.list_store.n_items().max(1);
+            let rows = items.div_ceil(columns);
+
+            // Uniform cells, so the mean height is the real height.
+            let row_height = vadj.upper() / rows as f64;
+            if row_height <= 0. {
+                return;
+            }
+
+            let row_top = (store_index / columns) as f64 * row_height;
+            let row_bottom = row_top + row_height;
+
+            if row_top < vadj.value() {
+                vadj.set_value(row_top);
+            } else if row_bottom > vadj.value() + vadj.page_size() {
+                vadj.set_value(row_bottom - vadj.page_size());
+            }
         }
 
         /// This is a special mode that a blank page is inserted into the start

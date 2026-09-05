@@ -60,6 +60,9 @@ mod imp {
         pub(super) error_alert: TemplateChild<adw::AlertDialog>,
 
         pub(super) mode: Cell<WindowRunMode>,
+        /// The tab a load in flight is destined for, when it was opened in
+        /// the background so the current document stays on screen meanwhile.
+        pub(super) pending_view: RefCell<Option<PpsDocumentView>>,
 
         pub(super) display_name: RefCell<String>,
         pub(super) edit_name: RefCell<String>,
@@ -214,6 +217,40 @@ mod imp {
             }
 
             self.add_tab()
+        }
+
+        /// The tab page holding `view`, if it is still in the tab view.
+        /// `tab_view.page()` itself is a critical - fatal here - on a child
+        /// that was closed, and a background tab can be closed mid-load.
+        pub(super) fn page_of(&self, view: &PpsDocumentView) -> Option<adw::TabPage> {
+            (0..self.tab_view.n_pages())
+                .map(|i| self.tab_view.nth_page(i))
+                .find(|p| p.child() == *view.upcast_ref::<gtk::Widget>())
+        }
+
+        /// The view the load in flight belongs to: the background tab
+        /// opened for it, or the selected tab.
+        pub(super) fn target_view(&self) -> PpsDocumentView {
+            self.pending_view
+                .borrow()
+                .clone()
+                .unwrap_or_else(|| self.document_view())
+        }
+
+        /// Append a tab without selecting it, showing the spinner AdwTabView
+        /// draws for a loading page. The caller selects it when its document
+        /// is ready, so the current document never leaves the screen.
+        pub(super) fn add_tab_background(&self) -> PpsDocumentView {
+            let view = glib::Object::builder::<PpsDocumentView>().build();
+
+            view.set_tab_view(&self.tab_view);
+            view.set_zoom_overlay_visible(self.settings.boolean("show-zoom-overlay"));
+
+            let page = self.tab_view.append(&view);
+            page.set_loading(true);
+            page.set_title(&gettext("Loading…"));
+
+            view
         }
 
         /// Append a tab and select it.
@@ -721,8 +758,10 @@ mod imp {
 
                 let target_file = gio::File::for_path(self.local_path.borrow().as_ref().unwrap());
 
-                self.loader_view.set_uri(file.uri());
-                self.set_mode(WindowRunMode::LoaderView);
+                if self.pending_view.borrow().is_none() {
+                    self.loader_view.set_uri(file.uri());
+                    self.set_mode(WindowRunMode::LoaderView);
+                }
 
                 let (result, mut stream) = file.copy_future(
                     &target_file,
@@ -783,7 +822,7 @@ mod imp {
                 }
             };
 
-            let view = self.document_view();
+            let view = self.target_view();
 
             view.set_filenames(&display_name, &edit_name);
             self.set_tab_title(&view, &display_name);
@@ -988,10 +1027,16 @@ mod imp {
             dest: Option<&papers_document::LinkDest>,
             mode: Option<WindowRunMode>,
         ) {
-            // Honour a pending "open in a new tab" request before anything
-            // resolves document_view(), so the load lands in the new tab.
+            // Honour a pending "open in a new tab" request. The tab is not
+            // selected: the document being read stays visible while the new
+            // one loads, instead of the whole window flipping to a loading
+            // screen, and the finished handler targets the tab explicitly so
+            // switching tabs mid-load cannot re-route the document.
             if self.open_in_new_tab.replace(false) && !self.document_view().is_empty() {
-                self.add_tab();
+                let view = self.add_tab_background();
+                self.pending_view.replace(Some(view));
+            } else {
+                self.pending_view.replace(None);
             }
 
             self.clear_load_job();
@@ -1029,7 +1074,9 @@ mod imp {
             self.set_filenames(file.as_ref());
             self.init_metadata_with_default_values(file.as_ref());
 
-            self.setup_window_size();
+            if self.pending_view.borrow().is_none() {
+                self.setup_window_size();
+            }
 
             let load_job = papers_view::JobLoad::new();
             load_job.set_uri(uri);
@@ -1062,15 +1109,37 @@ mod imp {
                                 pending_mode = m;
                             }
 
-                            obj.document_view().open_document(
+                            let pending = obj.pending_view.take();
+
+                            if let Some(view) = pending.as_ref() {
+                                if obj.page_of(view).is_none() {
+                                    // The tab was closed while its document
+                                    // was still loading: drop the result.
+                                    obj.clear_load_job();
+                                    return;
+                                }
+                            }
+
+                            let view = pending.unwrap_or_else(|| obj.document_view());
+
+                            view.open_document(
                                 &document,
                                 obj.metadata.borrow().clone().as_ref(),
                                 dest.as_ref(),
                                 pending_mode,
                             );
 
-                            obj.document_view()
-                                .set_inverted_colors(obj.settings.boolean("night-mode"));
+                            view.set_inverted_colors(obj.settings.boolean("night-mode"));
+
+                            // A background tab is revealed only now, document
+                            // and all - this is what makes opening into a tab
+                            // seamless instead of a window-wide reload.
+                            if let Some(page) = obj.page_of(&view) {
+                                if page.is_loading() {
+                                    page.set_loading(false);
+                                    obj.tab_view.set_selected_page(&page);
+                                }
+                            }
 
                             match pending_mode {
                                 WindowRunMode::Presentation => obj.run_presentation(),
@@ -1142,6 +1211,20 @@ mod imp {
                                             .set_filename(obj.display_name.borrow().as_str());
                                         obj.password_view.ask_password(wrong_password);
                                         obj.set_mode(WindowRunMode::PasswordView)
+                                    } else if let Some(view) = obj.pending_view.take() {
+                                        // The current document is still on
+                                        // screen; failing to load another one
+                                        // must not tear it down.
+                                        if let Some(page) = obj.page_of(&view) {
+                                            obj.tab_view.close_page(&page);
+                                        }
+                                        obj.error_message(
+                                            Some(&e),
+                                            &gettext("Unable to Open Document"),
+                                        );
+
+                                        obj.clear_load_job();
+                                        obj.clear_local_uri();
                                     } else {
                                         obj.show_error(Some(&e));
 
@@ -1219,9 +1302,14 @@ mod imp {
                                     return obj.load_remote_file(file.as_ref()).await;
                                 }
 
-                                // If stream is properly seekable, load directly
-                                obj.loader_view.set_fraction(-1_f64);
-                                obj.set_mode(WindowRunMode::LoaderView);
+                                // If stream is properly seekable, load directly.
+                                // Only the empty window shows the loading
+                                // screen; with a document open the load runs
+                                // behind the background tab's spinner.
+                                if obj.pending_view.borrow().is_none() {
+                                    obj.loader_view.set_fraction(-1_f64);
+                                    obj.set_mode(WindowRunMode::LoaderView);
+                                }
                                 load_job.scheduler_push_job(papers_view::JobPriority::PriorityNone);
                             }
                             Err(_) => {
@@ -1260,18 +1348,6 @@ mod imp {
             .into()
         }
 
-        fn file_dialog_restore_folder(&self, dialog: &gtk::FileDialog, dir: UserDirectory) {
-            let settings = self.settings.get();
-            let key = Self::settings_key_for_directory(dir);
-
-            let folder = settings.get::<Option<String>>(&key).map(PathBuf::from);
-            let folder = folder
-                .or_else(|| glib::user_special_dir(dir))
-                .unwrap_or_else(glib::home_dir);
-
-            dialog.set_initial_folder(Some(&gio::File::for_path(folder)));
-        }
-
         fn file_dialog_save_folder(&self, file: Option<&gio::File>, dir: UserDirectory) {
             let folder = file.and_then(|f| f.parent());
 
@@ -1289,24 +1365,66 @@ mod imp {
                 .expect("Failed to save folder path");
         }
 
+        // GtkFileChooserDialog is deprecated, deliberately: GtkFileDialog
+        // inside Flatpak always goes through the file-chooser portal - a
+        // D-Bus round trip plus a dialog rendered by another process - which
+        // is why the picker took so long to appear. The sandbox mounts the
+        // home directory read-only, so an in-process chooser can browse
+        // everything an *open* needs, instantly, the way Evince 46 did.
+        // Save As keeps the portal: writing outside the sandbox needs it.
+        #[allow(deprecated)]
         fn cmd_file_open(&self) {
-            let dialog = gtk::FileDialog::builder().modal(true).build();
+            let chooser = gtk::FileChooserDialog::new(
+                Some(gettext("Open Document")),
+                Some(self.obj().as_ref()),
+                gtk::FileChooserAction::Open,
+                &[
+                    (&gettext("_Cancel"), gtk::ResponseType::Cancel),
+                    (&gettext("_Open"), gtk::ResponseType::Accept),
+                ],
+            );
 
-            papers_document::Document::factory_add_filters(&dialog, Document::NONE);
+            chooser.set_modal(true);
+            chooser.set_select_multiple(true);
+            chooser.set_default_response(gtk::ResponseType::Accept);
 
-            self.file_dialog_restore_folder(&dialog, UserDirectory::Documents);
+            // The factory only speaks GtkFileDialog; borrow its filter list.
+            let template = gtk::FileDialog::new();
+            papers_document::Document::factory_add_filters(&template, Document::NONE);
+            if let Some(filters) = template.filters() {
+                for filter in filters.iter::<glib::Object>().flatten() {
+                    if let Ok(filter) = filter.downcast::<gtk::FileFilter>() {
+                        chooser.add_filter(&filter);
+                    }
+                }
+            }
 
-            glib::spawn_future_local(glib::clone!(
+            {
+                let settings = self.settings.get();
+                let key = Self::settings_key_for_directory(UserDirectory::Documents);
+                let folder = settings.get::<Option<String>>(&key).map(PathBuf::from);
+                let folder = folder
+                    .or_else(|| glib::user_special_dir(UserDirectory::Documents))
+                    .unwrap_or_else(glib::home_dir);
+                let _ = chooser.set_current_folder(Some(&gio::File::for_path(folder)));
+            }
+
+            chooser.connect_response(glib::clone!(
                 #[weak(rename_to = obj)]
                 self,
-                async move {
-                    let Ok(files) = dialog.open_multiple_future(Some(obj.obj().as_ref())).await
-                    else {
-                        return;
-                    };
+                move |chooser, response| {
+                    chooser.close();
 
-                    for f in files.iter::<gio::File>() {
-                        let f = f.unwrap();
+                    if response != gtk::ResponseType::Accept {
+                        return;
+                    }
+
+                    let files = chooser.files();
+
+                    for f in files.iter::<glib::Object>().flatten() {
+                        let Ok(f) = f.downcast::<gio::File>() else {
+                            continue;
+                        };
                         let uri = f.uri();
 
                         if obj.obj().uri().is_some_and(|u| u != uri) {
@@ -1337,6 +1455,8 @@ mod imp {
                     }
                 }
             ));
+
+            chooser.present();
         }
     }
 
