@@ -20,9 +20,17 @@ split `PpsDocumentView` out of the window, with 61 of 67 actions in a scoped
 | --- | --- |
 | Open in a new tab | `Ctrl+T` |
 | Open (tab or window, per preference) | `Ctrl+O` |
-| Open in a new window | `Shift+Ctrl+N` |
+| Open a copy in a new tab | `Ctrl+Shift+D` |
+| Open in a new window | `Ctrl+Shift+N` |
 | Close tab (closes the window if it is the last) | `Ctrl+W` |
+| Close window | `Ctrl+Shift+W` |
 | Next / previous tab | `Ctrl+Tab` / `Ctrl+Shift+Tab`, `Ctrl+PgDn` / `Ctrl+PgUp` |
+
+Opening a document into a tab is seamless: the current document stays on screen
+while the new one loads behind a spinner on its own tab, which is revealed only
+when ready, rather than the whole window flipping to a loading screen. The
+outline loads immediately too — its links job used to sit at the lowest priority
+behind every thumbnail render of the new tab.
 
 Documents opened from the file manager also become tabs. This required making
 the application single-instance; see *Trade-offs*.
@@ -32,7 +40,9 @@ the application single-instance; see *Trade-offs*.
 Hovering an internal link still shows the usual thumbnail. **Right-click it** and
 the preview is pinned: the static thumbnail is replaced by a live view of the
 destination that can be scrolled, drag-selected, and copied from with `Ctrl+C`.
-Click outside to dismiss.
+Click outside or press `Escape` to dismiss. The pinned preview no longer takes a
+system keyboard grab, so `Alt+Tab` and other global shortcuts keep working while
+it is up.
 
 A thumbnail is a texture with no text layer, so nothing in it can ever be
 selected. The live view is only built on an explicit pin — standing up a second
@@ -59,6 +69,23 @@ From the main menu. Contains:
 - **Floating controls** — the zoom and annotation buttons over the page
 - **Keep outline sections expanded**
 - **Open documents in a new tab** — off restores one window per document
+- **Customizable shortcuts** — a Shortcuts page rebinds the fork's own
+  shortcuts (tabs, sidebar, outline, floating controls, preferences): activate a
+  row, press the combination, `Backspace` to reset. Collisions within the set are
+  refused. The accent chooser shows a coloured swatch for each option, including
+  the resolved colour behind "Follow system".
+
+### Two-finger and wheel page flipping
+
+In non-continuous (single-page) view, scrolling past the edge of a page turns to
+the next, and on a page that fits the window entirely a scroll turns the page
+outright — the Evince behaviour Papers had dropped, where a fitted page simply
+would not respond to the wheel or touchpad.
+
+### Outline expand/collapse toggle
+
+`F8` expands the whole outline, or collapses it back to just the top-level
+chapters — whichever the current state calls for.
 
 ### Resizable sidebar
 
@@ -136,6 +163,23 @@ is unobstructed. Applies to every tab and is remembered.
     measures nothing.
 13. **Closing a tab returned to the start page** while a document was still open.
 14. **Outline sections collapsed** as soon as the reader scrolled past them.
+15. **The floating annotation button reappeared on restart** even with the
+    controls switched off: `open_document` forced it visible for any annotatable
+    document, after the setting had already been applied.
+16. **Opening a document into a tab reloaded the whole window** — it flipped to
+    the loading screen instead of loading behind the new tab.
+17. **The outline appeared seconds late in a new tab**: its links job ran at the
+    lowest priority, behind every thumbnail render.
+18. **The Ctrl+O picker was slow** — GtkFileDialog in Flatpak is a portal round
+    trip. Open now uses an in-process chooser (~0.4s).
+19. **The thumbnail selection jumped down then up** at the viewport edges,
+    because `scroll_to(FOCUS|SELECT)` scrolled twice; it now scrolls minimally
+    and only when the page is off-screen.
+20. **Two-finger and wheel scrolling did nothing in single-page view** — a
+    fitted page left the scrolled window nothing to scroll, so it never turned
+    the page.
+21. **A pinned link preview swallowed Alt+Tab**: its autohide popover took a
+    system keyboard grab. It no longer uses autohide.
 
 ### Upstream bugs worth reporting
 
@@ -180,6 +224,7 @@ All under `org.gnome.Papers`:
 | `open-in-new-tab` | true | Tabs rather than windows |
 | `show-zoom-overlay` | true | Floating controls |
 | `collapse-sidebar-when-narrow` | true | Auto-collapse below 720sp |
+| `custom-shortcuts` | `{}` | Per-action shortcut overrides (id → accel) |
 
 ---
 

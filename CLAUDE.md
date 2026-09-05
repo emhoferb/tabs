@@ -45,6 +45,12 @@ Two languages, split by directory. This split decides where a change goes:
 actions and, in this fork, an `AdwTabView` of document views. This split is why
 tabs were feasible; GTK routes `doc.*` to whichever tab holds focus.
 
+The customizable shortcuts (`shell/src/shortcuts.rs`) fall out of that split:
+window-scope entries become application accels (`set_accels_for_action`), but
+document-scope ones must be a `GtkShortcutController` installed on each view,
+because a `doc.*` action only resolves from a widget with that group in scope.
+Both are rebuilt when the `custom-shortcuts` GSettings map changes.
+
 ## Testing
 
 There is a GUI test rig, because most of this work is only observable on screen.
