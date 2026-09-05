@@ -186,6 +186,10 @@ typedef struct _PpsViewPrivate {
 	gdouble zoom_center_x;
 	gdouble zoom_center_y;
 
+	/* Wheel/touchpad page flipping in non-continuous mode */
+	gdouble scroll_flip_accum;
+	guint32 scroll_flip_time;
+
 	/* Link preview */
 	PpsLinkPreview link_preview;
 

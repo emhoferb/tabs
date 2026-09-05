@@ -3545,6 +3545,10 @@ pps_view_size_allocate (GtkWidget *widget,
 		gtk_popover_present (GTK_POPOVER (priv->link_preview.popover));
 }
 
+static gboolean scroll_flip_page (PpsView *view,
+                                  GtkEventControllerScroll *self,
+                                  gdouble dy);
+
 static gboolean
 scroll_to_zoom_cb (GtkEventControllerScroll *self, gdouble dx, gdouble dy, GtkWidget *widget)
 {
@@ -3575,7 +3579,81 @@ scroll_to_zoom_cb (GtkEventControllerScroll *self, gdouble dx, gdouble dy, GtkWi
 		return TRUE;
 	}
 
+	if (state == 0)
+		return scroll_flip_page (view, self, dy);
+
 	return FALSE;
+}
+
+/* Two-finger scrolling and the wheel in non-continuous mode.
+ *
+ * With one page per screen the scrolled window has nothing to scroll, so
+ * plain scroll events used to die there and the touchpad could not turn
+ * pages - Evince handled this in its own scroll handler, GTK3-era. And a
+ * page taller than the window used to stop dead at its bottom edge, where
+ * Evince continued to the next page.
+ *
+ * Deltas accumulate so one touchpad swipe is one flip rather than five: a
+ * flip fires when the accumulated distance passes a threshold, and the
+ * accumulator drains on a pause or a change of direction.
+ */
+static gboolean
+scroll_flip_page (PpsView *view,
+                  GtkEventControllerScroll *self,
+                  gdouble dy)
+{
+	PpsViewPrivate *priv = GET_PRIVATE (view);
+	guint32 time = gtk_event_controller_get_current_event_time (GTK_EVENT_CONTROLLER (self));
+	gboolean fits;
+	gdouble threshold, value = 0., upper = 0., page_size = 0.;
+
+	if (pps_document_model_get_continuous (priv->model))
+		return FALSE;
+
+	if (dy == 0.)
+		return FALSE;
+
+	fits = pps_view_page_fits (view, GTK_ORIENTATION_VERTICAL);
+
+	/* A page taller than the window scrolls normally until it is hard
+	 * against the edge the user is pushing towards. */
+	if (!fits) {
+		value = gtk_adjustment_get_value (priv->vadjustment);
+		upper = gtk_adjustment_get_upper (priv->vadjustment);
+		page_size = gtk_adjustment_get_page_size (priv->vadjustment);
+
+		if (dy > 0 && value < upper - page_size - 1.)
+			return FALSE;
+		if (dy < 0 && value > 1.)
+			return FALSE;
+	}
+
+	/* Wheel clicks arrive as whole units, touchpads as surface pixels. */
+	threshold = gtk_event_controller_scroll_get_unit (self) == GDK_SCROLL_UNIT_SURFACE ? 40. : 1.;
+
+	/* Direction change or a pause drains the accumulator, so momentum
+	 * from the previous page's swipe does not chain into another flip. */
+	if ((priv->scroll_flip_accum > 0) != (dy > 0) ||
+	    time - priv->scroll_flip_time > 500)
+		priv->scroll_flip_accum = 0.;
+
+	priv->scroll_flip_time = time;
+	priv->scroll_flip_accum += dy;
+
+	if (priv->scroll_flip_accum <= -threshold) {
+		priv->scroll_flip_accum = 0.;
+		if (!fits)
+			gtk_adjustment_set_value (priv->vadjustment,
+			                          gtk_adjustment_get_lower (priv->vadjustment));
+		pps_view_scroll (view, GTK_SCROLL_PAGE_BACKWARD, GTK_ORIENTATION_VERTICAL);
+	} else if (priv->scroll_flip_accum >= threshold) {
+		priv->scroll_flip_accum = 0.;
+		if (!fits)
+			gtk_adjustment_set_value (priv->vadjustment, upper - page_size);
+		pps_view_scroll (view, GTK_SCROLL_PAGE_FORWARD, GTK_ORIENTATION_VERTICAL);
+	}
+
+	return TRUE;
 }
 
 /* This is based on the deprecated function gtk_draw_insertion_cursor. */
@@ -3974,6 +4052,24 @@ link_preview_copy_cb (GtkWidget *widget,
 	return TRUE;
 }
 
+/* Escape inside the pinned preview. The shortcut sits on the preview view,
+ * whose popover ancestor is the pinned popover; popping it down runs the
+ * same "closed" path an outside click does. */
+static gboolean
+link_preview_unpin_cb (GtkWidget *widget,
+                       GVariant *args,
+                       gpointer user_data)
+{
+	GtkWidget *popover = gtk_widget_get_ancestor (widget, GTK_TYPE_POPOVER);
+
+	if (!popover)
+		return FALSE;
+
+	gtk_popover_popdown (GTK_POPOVER (popover));
+
+	return TRUE;
+}
+
 static gboolean
 link_preview_deferred_cleanup (gpointer data)
 {
@@ -4163,6 +4259,9 @@ link_preview_pin (PpsView *view)
 	gtk_shortcut_controller_add_shortcut (GTK_SHORTCUT_CONTROLLER (shortcuts),
 	                                      gtk_shortcut_new (gtk_keyval_trigger_new (GDK_KEY_c, GDK_CONTROL_MASK),
 	                                                        gtk_callback_action_new (link_preview_copy_cb, NULL, NULL)));
+	gtk_shortcut_controller_add_shortcut (GTK_SHORTCUT_CONTROLLER (shortcuts),
+	                                      gtk_shortcut_new (gtk_keyval_trigger_new (GDK_KEY_Escape, 0),
+	                                                        gtk_callback_action_new (link_preview_unpin_cb, NULL, NULL)));
 	gtk_widget_add_controller (GTK_WIDGET (preview), shortcuts);
 	gtk_widget_set_can_focus (GTK_WIDGET (preview), TRUE);
 
@@ -4178,7 +4277,12 @@ link_preview_pin (PpsView *view)
 
 	pinned = gtk_popover_new ();
 	gtk_popover_set_position (GTK_POPOVER (pinned), GTK_POS_TOP);
-	gtk_popover_set_autohide (GTK_POPOVER (pinned), TRUE);
+	/* No autohide: an autohide popover takes a *system* keyboard grab on
+	 * X11, which swallows even Alt+Tab while the preview is pinned. The
+	 * two things autohide provided are recreated by hand instead -
+	 * dismissal on an outside click lives in the view's press handler,
+	 * and Escape in a shortcut on the popover itself. */
+	gtk_popover_set_autohide (GTK_POPOVER (pinned), FALSE);
 	gtk_popover_set_pointing_to (GTK_POPOVER (pinned), &pointing_to);
 	/* Size the child, not just the popover. A GtkScrolledWindow will happily
 	 * shrink to nothing, so constraining only the popover makes it settle at
@@ -4577,6 +4681,25 @@ pps_view_button_press_event (GtkGestureClick *self,
 	    priv->link_preview.cleanup_idle_id == 0)
 		priv->link_preview.cleanup_idle_id =
 		    g_idle_add (link_preview_deferred_cleanup, view);
+
+	/* Without autohide, an outside click no longer dismisses the pinned
+	 * preview by itself, so it is recreated here. The popover is a widget
+	 * child of the view, which means presses *inside* it bubble through
+	 * this handler too - the event's coordinates decide which side of the
+	 * popover edge the click landed on.
+	 * popdown emits "closed", whose handler unpins and defers teardown. */
+	if (priv->link_preview.popover && priv->link_preview.pinned) {
+		GtkWidget *popover = priv->link_preview.popover;
+		graphene_point_t src = GRAPHENE_POINT_INIT ((float) x, (float) y);
+		graphene_point_t dst;
+		gboolean inside = gtk_widget_compute_point (widget, popover, &src, &dst) &&
+		                  gtk_widget_contains (popover, dst.x, dst.y);
+
+		if (!inside) {
+			gtk_popover_popdown (GTK_POPOVER (popover));
+			return;
+		}
+	}
 
 	if (!document || pps_document_get_n_pages (document) <= 0)
 		return;
