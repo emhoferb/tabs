@@ -81,6 +81,8 @@ mod imp {
         pub(super) breakpoints_installed: Cell<bool>,
         /// Whether a sidebar resize drag is in progress.
         pub(super) sidebar_dragging: Cell<bool>,
+        /// The customizable document-scope shortcuts, replaced on rebind.
+        pub(super) custom_shortcuts: RefCell<Option<gtk::ShortcutController>>,
         #[template_child]
         pub(super) banner: TemplateChild<adw::Banner>,
 
@@ -286,6 +288,7 @@ mod imp {
 
             self.setup_zoom_menu();
             self.setup_sidebar_resizer();
+            self.setup_custom_shortcuts();
             self.sidebar_was_open_before_find.set(true);
 
             let page_cache_mb = self.settings.uint(GS_PAGE_CACHE_SIZE) as usize;
@@ -377,6 +380,32 @@ mod imp {
         /// It also frees the grab zone from the sidebar's bounds, so it can
         /// reach well into the document side where there is room, while barely
         /// intruding on the sidebar's own last column.
+        /// The customizable doc-scope shortcuts (sidebar, outline,
+        /// duplicate-tab). Window-scope ones are application accels; these
+        /// need a widget with the "doc" group in scope, which is this view.
+        fn setup_custom_shortcuts(&self) {
+            let install = glib::clone!(
+                #[weak(rename_to = obj)]
+                self,
+                move || {
+                    if let Some(old) = obj.custom_shortcuts.take() {
+                        obj.obj().remove_controller(&old);
+                    }
+
+                    let controller = crate::shortcuts::document_controller(&obj.settings);
+                    obj.obj().add_controller(controller.clone());
+                    obj.custom_shortcuts.replace(Some(controller));
+                }
+            );
+
+            install();
+
+            self.settings.connect_changed(
+                Some(crate::shortcuts::SETTINGS_KEY),
+                move |_, _| install(),
+            );
+        }
+
         fn setup_sidebar_resizer(&self) {
             // Asymmetric on purpose: a pointer arrow is drawn down and to the
             // right of its hotspot, so coming from the document side the cursor
@@ -789,7 +818,11 @@ mod imp {
                 .dynamic_cast_ref::<DocumentAnnotations>()
                 .is_some_and(|d| d.can_add_annotation())
             {
-                self.annot_toolbar.set_visible(true);
+                // Not unconditionally visible: the floating controls may be
+                // switched off, and this runs after that setting was applied,
+                // so it used to resurrect the annotation button on restart.
+                self.annot_toolbar
+                    .set_visible(self.settings.boolean("show-zoom-overlay"));
                 self.zoom_toolbar.set_margin_bottom(70);
             } else {
                 self.annot_toolbar.set_visible(false);

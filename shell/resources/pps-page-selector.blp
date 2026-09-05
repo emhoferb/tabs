@@ -32,5 +32,8 @@ template $PpsPageSelector: Box {
     max-width-chars: 0;
     width-chars: 5;
     sensitive: false;
+
+    /* The "(x of y)" bracket otherwise touches the entry box. */
+    margin-start: 6;
   }
 }

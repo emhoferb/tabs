@@ -254,6 +254,10 @@ template $PpsDocumentView: Adw.BreakpointBin {
          * where tabs are normally found, rather than spanning the window. */
         Adw.TabBar tab_bar {
           autohide: true;
+
+          /* Browser-style: each tab only as wide as its title needs, packed
+           * against the sidebar edge, instead of sharing the full row. */
+          expand-tabs: false;
         }
 
         Adw.Banner banner {
@@ -647,11 +651,6 @@ template $PpsDocumentView: Adw.BreakpointBin {
       }
 
       Shortcut {
-        trigger: "<Ctrl><Shift>N";
-        action: "action(doc.open-copy)";
-      }
-
-      Shortcut {
         trigger: "<Ctrl>S|<Ctrl><Shift>S";
         action: "action(doc.save-as)";
       }
@@ -703,11 +702,6 @@ template $PpsDocumentView: Adw.BreakpointBin {
         trigger: "q";
         action: "action(doc.annot-textmarkup-type)";
         arguments: "'squiggly'";
-      }
-
-      Shortcut {
-        trigger: "F9";
-        action: "action(doc.show-sidebar)";
       }
 
       Shortcut {
