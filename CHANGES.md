@@ -84,8 +84,15 @@ would not respond to the wheel or touchpad.
 
 ### Outline expand/collapse toggle
 
-`F8` expands the whole outline, or collapses it back to just the top-level
-chapters — whichever the current state calls for.
+`F8`, or the floating button at the top of the outline sidebar, expands the
+whole outline or collapses it back to just the top-level chapters — whichever
+the current state calls for. The button's arrow shows which way it will go.
+
+### Type a page number
+
+Typing a bare digit over the document focuses the page box with that digit
+already entered; finish the number and press Enter to jump. Digits were unused
+as shortcuts, so nothing is lost.
 
 ### Resizable sidebar
 
@@ -180,6 +187,19 @@ is unobstructed. Applies to every tab and is remembered.
     the page.
 21. **A pinned link preview swallowed Alt+Tab**: its autohide popover took a
     system keyboard grab. It no longer uses autohide.
+22. **The pinned preview outlived its welcome** — it ignored Escape unless
+    focus was inside it, ignored clicks on the sidebar or header bar, floated
+    above other applications after Alt+Tab, and passed edge scrolls through to
+    the document behind it. Dismissal now lives at the window level (outside
+    clicks, focus loss), Escape asks libview first, and a scroll barrier on
+    the popover keeps its scrolling inside.
+23. **The Ctrl+O chooser lost the user's bookmarks**: the sandbox's config dir
+    hides them, so they are read from the home mount and added as shortcut
+    folders.
+24. **The accent swatch lagged one choice behind** and "Follow system" showed
+    the applied colour rather than the system's.
+25. **Changing the highlight style needed a restart** — the settings instance
+    holding the subscription was dropped immediately.
 
 ### Upstream bugs worth reporting
 
