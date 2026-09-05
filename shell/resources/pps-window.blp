@@ -129,28 +129,11 @@ template $PpsWindow: Adw.ApplicationWindow {
     };
   };
 
+  /* Only the fixed tab-cycling conventions live here. Everything else that
+   * the fork added is a *customizable* shortcut, installed from Rust out of
+   * the curated table in shortcuts.rs so the user's overrides apply. */
   ShortcutController {
     scope: global;
-
-    Shortcut {
-      trigger: "<Ctrl>h";
-      action: "action(win.show-zoom-overlay)";
-    }
-
-    Shortcut {
-      trigger: "<Ctrl><Shift>n";
-      action: "action(win.new-window)";
-    }
-
-    Shortcut {
-      trigger: "<Ctrl>t";
-      action: "action(win.new-tab)";
-    }
-
-    Shortcut {
-      trigger: "<Ctrl>w";
-      action: "action(win.close-tab)";
-    }
 
     Shortcut {
       trigger: "<Ctrl>Tab|<Ctrl>Page_Down";

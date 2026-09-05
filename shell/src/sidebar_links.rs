@@ -520,36 +520,48 @@ mod imp {
                         let model = job.model().unwrap();
 
                         obj.clear_path_cache();
-                        obj.build_path_cache(&model);
-
-                        // Update action sensitivity
-                        let is_flat = model
-                            .iter::<Outlines>()
-                            .map(|o| o.unwrap())
-                            .all(|o| o.children().is_none());
-                        obj.set_action_enabled("collapse-all", !is_flat);
-                        obj.set_action_enabled("expand-all", !is_flat);
-                        obj.set_action_enabled("expand-all-under", !is_flat);
-
                         obj.outlines.replace(Some(model.clone()));
 
-                        let tree_model = gtk::TreeListModel::new(model, false, false, |o| {
+                        let tree_model = gtk::TreeListModel::new(model.clone(), false, false, |o| {
                             o.dynamic_cast_ref::<papers_document::Outlines>()
                                 .unwrap()
                                 .children()
                         });
 
+                        // Rows first: the outline renders this frame. The
+                        // page cache walks every entry through poppler, so it
+                        // runs after the widget has had a chance to draw.
                         obj.selection_model.set_model(Some(&tree_model));
 
-                        obj.expand_open_links();
+                        glib::idle_add_local_once(glib::clone!(
+                            #[weak]
+                            obj,
+                            move || {
+                                obj.build_path_cache(&model);
 
-                        if let Some(model) = obj.obj().document_model() {
-                            obj.set_current_page(model.page());
-                        }
+                                // Update action sensitivity
+                                let is_flat = model
+                                    .iter::<Outlines>()
+                                    .map(|o| o.unwrap())
+                                    .all(|o| o.children().is_none());
+                                obj.set_action_enabled("collapse-all", !is_flat);
+                                obj.set_action_enabled("expand-all", !is_flat);
+                                obj.set_action_enabled("expand-all-under", !is_flat);
+
+                                obj.expand_open_links();
+
+                                if let Some(model) = obj.obj().document_model() {
+                                    obj.set_current_page(model.page());
+                                }
+                            }
+                        ));
                     }
                 ));
 
-                job.scheduler_push_job(JobPriority::PriorityNone);
+                // High, like the thumbnails: at PriorityNone the one cheap
+                // links job queued behind a fresh tab's stack of thumbnail
+                // renders, which is why the outline appeared seconds late.
+                job.scheduler_push_job(JobPriority::PriorityHigh);
             }
         }
 
@@ -667,6 +679,31 @@ mod imp {
             self.selection_model
                 .model()
                 .and_then(|m| m.downcast::<gtk::TreeListModel>().ok())
+        }
+
+        /// One-key toggle: any top-level section open means "collapse to
+        /// the chapters", none open means "expand everything".
+        pub(super) fn toggle_expansion(&self) {
+            let Some(tree_model) = self.tree_model() else {
+                return;
+            };
+
+            let mut index = 0;
+            let mut any_expanded = false;
+
+            while let Some(row) = tree_model.child_row(index) {
+                if row.is_expanded() {
+                    any_expanded = true;
+                    break;
+                }
+                index += 1;
+            }
+
+            if any_expanded {
+                self.collapse_all();
+            } else {
+                self.expand_all();
+            }
         }
 
         fn collapse_all(&self) {
@@ -1065,6 +1102,12 @@ glib::wrapper! {
 impl PpsSidebarLinks {
     pub fn new() -> Self {
         glib::Object::builder().build()
+    }
+
+    /// Expand the whole outline, or collapse it back to the top-level
+    /// chapters - whichever the current state calls for.
+    pub fn toggle_expansion(&self) {
+        self.imp().toggle_expansion();
     }
 }
 

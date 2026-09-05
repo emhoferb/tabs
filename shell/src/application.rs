@@ -392,6 +392,19 @@ mod imp {
                         spawn(None, None, None);
                     })
                     .build(),
+                // Replaces the dialog AdwApplication builds on its own from
+                // shortcuts-dialog.ui, so a section for the customizable
+                // shortcuts can be appended with their *current* accels -
+                // static blueprint items would go stale after a rebind.
+                gio::ActionEntryBuilder::new("shortcuts")
+                    .activate(glib::clone!(
+                        #[weak(rename_to = obj)]
+                        self,
+                        move |_, _, _| {
+                            obj.show_shortcuts_dialog();
+                        }
+                    ))
+                    .build(),
             ];
 
             let obj = self.obj();
@@ -403,10 +416,56 @@ mod imp {
             obj.set_accels_for_action("app.quit", &["<Ctrl>Q"]);
 
             obj.set_accels_for_action("win.open", &["<Ctrl>O"]);
-            obj.set_accels_for_action("win.close", &["<Ctrl>W"]);
+            // Not Ctrl+W: that closes the current *tab* (a window-scope
+            // shortcut installed from the curated table in shortcuts.rs, where
+            // the app-level accel would always win and close the whole window).
+            obj.set_accels_for_action("win.close", &["<Ctrl><Shift>W"]);
             obj.set_accels_for_action("win.fullscreen", &["F11"]);
             obj.set_accels_for_action("win.night-mode", &["<Ctrl>I"]);
             obj.set_accels_for_action("win.presentation", &["F5", "<Shift>F5"]);
+
+            // The customizable set, and its refresh when the map changes. The
+            // settings object must outlive the subscription, so it is leaked
+            // into the closure - one per process, for the process lifetime.
+            let settings = gio::Settings::new("org.gnome.Papers");
+
+            crate::shortcuts::apply_app_accels(&*obj, &settings);
+
+            settings.connect_changed(
+                Some(crate::shortcuts::SETTINGS_KEY),
+                glib::clone!(
+                    #[weak]
+                    obj,
+                    move |settings, _| {
+                        crate::shortcuts::apply_app_accels(&obj, settings);
+                    }
+                ),
+            );
+
+            // Signals only fire while the instance lives; this one is meant
+            // to watch for the whole process.
+            std::mem::forget(settings);
+        }
+
+        pub(super) fn show_shortcuts_dialog(&self) {
+            let Some(dialog) = gtk::Builder::from_resource("/org/gnome/papers/shortcuts-dialog.ui")
+                .object::<adw::ShortcutsDialog>("shortcuts_dialog")
+            else {
+                return;
+            };
+
+            let settings = gio::Settings::new("org.gnome.Papers");
+            let section = adw::ShortcutsSection::new(Some(&gettext("Tabs and View")));
+
+            for e in crate::shortcuts::ENTRIES {
+                section.add(adw::ShortcutsItem::new(
+                    &gettext(e.title),
+                    &crate::shortcuts::accel(&settings, e),
+                ));
+            }
+
+            dialog.add(section);
+            dialog.present(self.obj().active_window().as_ref());
         }
 
         fn setup_command_line(&self) {

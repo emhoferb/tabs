@@ -57,7 +57,7 @@ template $PpsPreferencesDialog: Adw.PreferencesDialog {
 
       Adw.SwitchRow zoom_overlay_row {
         title: _("Floating Controls");
-        subtitle: _("Zoom and annotation buttons over the page (Ctrl+H)");
+        subtitle: _("Zoom and annotation buttons over the page");
       }
     }
   }
@@ -82,6 +82,18 @@ template $PpsPreferencesDialog: Adw.PreferencesDialog {
         title: _("Open in New Tab");
         subtitle: _("Documents opened from the file manager or the Open dialog become tabs rather than windows");
       }
+    }
+  }
+
+  Adw.PreferencesPage {
+    icon-name: "input-keyboard-symbolic";
+    title: _("Shortcuts");
+
+    /* Rows are built in code from the curated table in shortcuts.rs, so the
+     * list and the actual bindings can never drift apart. */
+    Adw.PreferencesGroup shortcuts_group {
+      title: _("Customizable Shortcuts");
+      description: _("Activate a row and press the new combination. Backspace resets to the default.");
     }
   }
 }

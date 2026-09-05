@@ -27,6 +27,7 @@ mod properties_signatures;
 mod properties_window;
 mod search_box;
 mod style;
+mod shortcuts;
 mod sidebar;
 mod sidebar_annotations;
 mod sidebar_annotations_row;

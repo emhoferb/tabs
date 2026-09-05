@@ -101,6 +101,15 @@ impl imp::PpsDocumentView {
 
     pub fn setup_actions(&self) {
         let actions = [
+            gio::ActionEntryBuilder::new("outline-toggle")
+                .activate(glib::clone!(
+                    #[weak(rename_to = obj)]
+                    self,
+                    move |_, _, _| {
+                        obj.sidebar_links.toggle_expansion();
+                    }
+                ))
+                .build(),
             gio::ActionEntryBuilder::new("open-copy")
                 .activate(glib::clone!(
                     #[weak(rename_to = obj)]

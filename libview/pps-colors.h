@@ -7,8 +7,12 @@
 #include <adwaita.h>
 #include <gtk/gtk.h>
 
+#include "pps-macros.h"
+
 /* Effective accent: the desktop's, or one inferred from the GTK theme name
- * where the desktop selects its accent by swapping theme variants. */
+ * where the desktop selects its accent by swapping theme variants.
+ * PPS_PUBLIC because the preferences dialog draws it as a swatch. */
+PPS_PUBLIC
 AdwAccentColor pps_get_accent_color (void);
 
 /* Re-resolve the accent and reinstall the CSS override. */
