@@ -15,6 +15,10 @@
 PPS_PUBLIC
 AdwAccentColor pps_get_accent_color (void);
 
+/* The desktop's accent alone, ignoring the accent-source preference. */
+PPS_PUBLIC
+AdwAccentColor pps_get_system_accent_color (void);
+
 /* Re-resolve the accent and reinstall the CSS override. */
 void pps_accent_color_refresh (void);
 

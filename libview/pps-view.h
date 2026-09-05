@@ -142,4 +142,7 @@ void pps_view_start_signature_rect (PpsView *view);
 PPS_PUBLIC
 void pps_view_cancel_signature_rect (PpsView *view);
 
+PPS_PUBLIC
+gboolean pps_view_link_preview_dismiss (PpsView *view);
+
 G_END_DECLS

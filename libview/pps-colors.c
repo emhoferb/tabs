@@ -228,6 +228,22 @@ ensure_accent_css (void)
 	}
 }
 
+/* The desktop's own accent - portal or theme-name inference - ignoring the
+ * accent-source preference. What a "follow the system" swatch should show
+ * even while a fixed colour is applied. */
+AdwAccentColor
+pps_get_system_accent_color (void)
+{
+	AdwStyleManager *style_manager = adw_style_manager_get_default ();
+	AdwAccentColor accent = adw_style_manager_get_accent_color (style_manager);
+	AdwAccentColor from_theme;
+
+	if (accent == ADW_ACCENT_COLOR_BLUE && accent_from_theme_name (&from_theme))
+		return from_theme;
+
+	return accent;
+}
+
 AdwAccentColor
 pps_get_accent_color (void)
 {

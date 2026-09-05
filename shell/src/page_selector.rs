@@ -298,6 +298,17 @@ impl PpsPageSelector {
     pub fn new() -> Self {
         glib::Object::builder().build()
     }
+
+    /// Start editing the page number with `digit` already typed - the
+    /// document view routes bare digit presses here, so typing "42 Enter"
+    /// over the page jumps straight to page 42.
+    pub fn begin_typed_entry(&self, digit: &str) {
+        let entry = &self.imp().entry;
+
+        entry.grab_focus();
+        entry.set_text(digit);
+        entry.set_position(-1);
+    }
 }
 
 impl Default for PpsPageSelector {

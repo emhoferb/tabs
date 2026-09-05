@@ -4070,6 +4070,137 @@ link_preview_unpin_cb (GtkWidget *widget,
 	return TRUE;
 }
 
+/* The pinned popover is an override-redirect surface on X11: without a
+ * grab it would float above *other applications* after Alt+Tab. Dismiss it
+ * the moment this window stops being the active one. */
+static void
+link_preview_window_active_cb (GObject *window,
+                               GParamSpec *pspec,
+                               gpointer data)
+{
+	PpsView *view = data;
+	PpsViewPrivate *priv = GET_PRIVATE (view);
+
+	if (gtk_window_is_active (GTK_WINDOW (window)))
+		return;
+
+	if (priv->link_preview.popover && priv->link_preview.pinned)
+		gtk_popover_popdown (GTK_POPOVER (priv->link_preview.popover));
+}
+
+/* Autohide's click-outside dismissal, recreated at the window level so a
+ * click on the sidebar or header bar counts as outside too, not just one on
+ * the document. Runs in the capture phase; presses inside the popover are
+ * recognised by translating the press into its coordinate space. */
+static void
+link_preview_outside_press_cb (GtkGestureClick *gesture,
+                               gint n_press,
+                               gdouble x,
+                               gdouble y,
+                               gpointer data)
+{
+	PpsView *view = data;
+	PpsViewPrivate *priv = GET_PRIVATE (view);
+	GtkWidget *root = gtk_event_controller_get_widget (GTK_EVENT_CONTROLLER (gesture));
+	GtkWidget *popover = priv->link_preview.popover;
+	graphene_point_t src = GRAPHENE_POINT_INIT ((float) x, (float) y);
+	graphene_point_t dst;
+
+	if (!popover || !priv->link_preview.pinned)
+		return;
+
+	if (gtk_widget_compute_point (root, popover, &src, &dst) &&
+	    gtk_widget_contains (popover, dst.x, dst.y))
+		return;
+
+	gtk_popover_popdown (GTK_POPOVER (popover));
+
+	/* Swallow the press, as the autohide dismissal used to. */
+	gtk_gesture_set_state (GTK_GESTURE (gesture), GTK_EVENT_SEQUENCE_CLAIMED);
+}
+
+/* Scrolling inside the pinned preview must stay inside it: once its
+ * scrolled window hits an edge the event would bubble on - the popover is a
+ * widget child of the view - and start moving the main document. */
+static gboolean
+link_preview_scroll_barrier_cb (GtkEventControllerScroll *controller,
+                                gdouble dx,
+                                gdouble dy,
+                                gpointer data)
+{
+	return TRUE;
+}
+
+static void
+link_preview_watch_root (PpsView *view)
+{
+	PpsViewPrivate *priv = GET_PRIVATE (view);
+	GtkRoot *root = gtk_widget_get_root (GTK_WIDGET (view));
+	GtkGesture *click;
+
+	if (!GTK_IS_WINDOW (root) || priv->link_preview.root_window)
+		return;
+
+	priv->link_preview.root_window = g_object_ref (GTK_WINDOW (root));
+	priv->link_preview.active_handler_id =
+	    g_signal_connect (root, "notify::is-active",
+	                      G_CALLBACK (link_preview_window_active_cb), view);
+
+	click = gtk_gesture_click_new ();
+	gtk_gesture_single_set_button (GTK_GESTURE_SINGLE (click), 0);
+	gtk_event_controller_set_propagation_phase (GTK_EVENT_CONTROLLER (click),
+	                                            GTK_PHASE_CAPTURE);
+	g_signal_connect (click, "pressed",
+	                  G_CALLBACK (link_preview_outside_press_cb), view);
+	gtk_widget_add_controller (GTK_WIDGET (root), GTK_EVENT_CONTROLLER (click));
+	priv->link_preview.outside_click = GTK_EVENT_CONTROLLER (click);
+}
+
+static void
+link_preview_unwatch_root (PpsView *view)
+{
+	PpsViewPrivate *priv = GET_PRIVATE (view);
+
+	if (!priv->link_preview.root_window)
+		return;
+
+	if (priv->link_preview.active_handler_id) {
+		g_signal_handler_disconnect (priv->link_preview.root_window,
+		                             priv->link_preview.active_handler_id);
+		priv->link_preview.active_handler_id = 0;
+	}
+
+	if (priv->link_preview.outside_click) {
+		gtk_widget_remove_controller (GTK_WIDGET (priv->link_preview.root_window),
+		                              priv->link_preview.outside_click);
+		priv->link_preview.outside_click = NULL;
+	}
+
+	g_clear_object (&priv->link_preview.root_window);
+}
+
+/**
+ * pps_view_link_preview_dismiss:
+ * @view: a #PpsView
+ *
+ * Closes the pinned link preview, if one is up. The shell calls this from
+ * its Escape handling, so Escape works wherever the focus happens to be.
+ *
+ * Returns: %TRUE if there was a pinned preview to close.
+ */
+gboolean
+pps_view_link_preview_dismiss (PpsView *view)
+{
+	PpsViewPrivate *priv = GET_PRIVATE (view);
+
+	if (!priv->link_preview.popover || !priv->link_preview.pinned)
+		return FALSE;
+
+	gtk_popover_popdown (GTK_POPOVER (priv->link_preview.popover));
+
+	return TRUE;
+}
+
 static gboolean
 link_preview_deferred_cleanup (gpointer data)
 {
@@ -4303,11 +4434,23 @@ link_preview_pin (PpsView *view)
 	priv->link_preview.retire_idle_id =
 	    g_idle_add (link_preview_drop_retired_cb, view);
 
+	/* Keep scroll events that hit the preview's edges from spilling into
+	 * the document behind it. */
+	{
+		GtkEventController *barrier =
+		    gtk_event_controller_scroll_new (GTK_EVENT_CONTROLLER_SCROLL_BOTH_AXES);
+		g_signal_connect (barrier, "scroll",
+		                  G_CALLBACK (link_preview_scroll_barrier_cb), NULL);
+		gtk_widget_add_controller (pinned, barrier);
+	}
+
 	priv->link_preview.popover = pinned;
 	gtk_widget_set_parent (pinned, GTK_WIDGET (view));
 
 	g_signal_connect (pinned, "closed",
 	                  G_CALLBACK (link_preview_popover_closed), view);
+
+	link_preview_watch_root (view);
 
 	gtk_popover_present (GTK_POPOVER (pinned));
 	gtk_popover_popup (GTK_POPOVER (pinned));
@@ -4375,6 +4518,8 @@ link_preview_destroy (PpsView *view)
 		gtk_popover_popdown (GTK_POPOVER (priv->link_preview.popover));
 		g_clear_pointer (&priv->link_preview.popover, gtk_widget_unparent);
 	}
+
+	link_preview_unwatch_root (view);
 
 	priv->link_preview.pinned = FALSE;
 	priv->link_preview.view = NULL;
@@ -4681,25 +4826,6 @@ pps_view_button_press_event (GtkGestureClick *self,
 	    priv->link_preview.cleanup_idle_id == 0)
 		priv->link_preview.cleanup_idle_id =
 		    g_idle_add (link_preview_deferred_cleanup, view);
-
-	/* Without autohide, an outside click no longer dismisses the pinned
-	 * preview by itself, so it is recreated here. The popover is a widget
-	 * child of the view, which means presses *inside* it bubble through
-	 * this handler too - the event's coordinates decide which side of the
-	 * popover edge the click landed on.
-	 * popdown emits "closed", whose handler unpins and defers teardown. */
-	if (priv->link_preview.popover && priv->link_preview.pinned) {
-		GtkWidget *popover = priv->link_preview.popover;
-		graphene_point_t src = GRAPHENE_POINT_INIT ((float) x, (float) y);
-		graphene_point_t dst;
-		gboolean inside = gtk_widget_compute_point (widget, popover, &src, &dst) &&
-		                  gtk_widget_contains (popover, dst.x, dst.y);
-
-		if (!inside) {
-			gtk_popover_popdown (GTK_POPOVER (popover));
-			return;
-		}
-	}
 
 	if (!document || pps_document_get_n_pages (document) <= 0)
 		return;

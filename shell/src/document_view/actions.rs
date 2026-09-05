@@ -895,6 +895,19 @@ impl imp::PpsDocumentView {
     }
 
     fn cmd_escape(&self) {
+        // A pinned link preview is the most transient thing on screen, so
+        // Escape reaches for it first - and libview handles it regardless of
+        // where the keyboard focus happens to be.
+        extern "C" {
+            fn pps_view_link_preview_dismiss(view: *mut std::ffi::c_void) -> glib::ffi::gboolean;
+        }
+
+        if unsafe { pps_view_link_preview_dismiss(self.view.as_ptr() as *mut _) }
+            != glib::ffi::GFALSE
+        {
+            return;
+        }
+
         if self
             .sidebar_stack
             .visible_child()

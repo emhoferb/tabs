@@ -32,6 +32,9 @@ mod imp {
         pub(super) list_store: TemplateChild<gio::ListStore>,
         #[template_child]
         pub(super) selection_model: TemplateChild<gtk::SingleSelection>,
+        /// The reveal animation in flight, replaced whenever the current
+        /// page moves again.
+        pub(super) reveal_animation: RefCell<Option<adw::TimedAnimation>>,
         #[template_child]
         pub(super) factory: TemplateChild<gtk::SignalListItemFactory>,
         /// Switch of blank_head mode. When this mode is enabled. A blank page is
@@ -487,11 +490,32 @@ mod imp {
             let row_top = (store_index / columns) as f64 * row_height;
             let row_bottom = row_top + row_height;
 
-            if row_top < vadj.value() {
-                vadj.set_value(row_top);
+            let target = if row_top < vadj.value() {
+                row_top
             } else if row_bottom > vadj.value() + vadj.page_size() {
-                vadj.set_value(row_bottom - vadj.page_size());
+                row_bottom - vadj.page_size()
+            } else {
+                return;
+            };
+
+            // A short ease instead of an instant hop: this is the "jump" at
+            // the bottom edge. Evince's tree view had the same step size but
+            // GTK3 smoothed it; here the easing does.
+            if let Some(previous) = self.reveal_animation.take() {
+                previous.pause();
             }
+
+            let animation = adw::TimedAnimation::new(
+                &self.grid_view.get(),
+                vadj.value(),
+                target,
+                150,
+                adw::PropertyAnimationTarget::new(&vadj, "value"),
+            );
+            animation.set_easing(adw::Easing::EaseOutCubic);
+            animation.play();
+
+            self.reveal_animation.replace(Some(animation));
         }
 
         /// This is a special mode that a blank page is inserted into the start

@@ -12,7 +12,15 @@ pub const HL_OUTLINE: &str = "pps-hl-outline";
 pub const HL_FILL: &str = "pps-hl-fill";
 
 fn settings() -> gio::Settings {
-    gio::Settings::new("org.gnome.Papers")
+    // One shared instance for the whole process. A fresh instance per call
+    // used to be dropped as soon as the caller returned, killing its
+    // "changed" subscription - which is why a new highlight style only
+    // showed up after a restart.
+    thread_local! {
+        static SETTINGS: gio::Settings = gio::Settings::new("org.gnome.Papers");
+    }
+
+    SETTINGS.with(|s| s.clone())
 }
 
 /// Apply the configured selection style to `widget` and keep it in step.

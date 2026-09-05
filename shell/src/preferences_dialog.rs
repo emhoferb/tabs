@@ -8,9 +8,10 @@ use crate::simple_color_swatch::SimpleColorSwatch;
 use glib::translate::FromGlib;
 
 extern "C" {
-    /// libview's resolved accent: the desktop's, or the one inferred from the
-    /// theme name. What the swatch for "Follow system" should show.
-    fn pps_get_accent_color() -> i32;
+    /// The desktop's own accent - portal or theme inference - ignoring the
+    /// accent-source preference, so the "Follow system" swatch shows the
+    /// system colour even while a fixed one is applied.
+    fn pps_get_system_accent_color() -> i32;
 }
 
 /// Accent choices, in the order they appear in the combo row. The first two are
@@ -40,7 +41,7 @@ fn accent_rgba(name: &str) -> gdk::RGBA {
     use adw::AccentColor::*;
 
     let accent = match name {
-        "system" => unsafe { adw::AccentColor::from_glib(pps_get_accent_color()) },
+        "system" => unsafe { adw::AccentColor::from_glib(pps_get_system_accent_color()) },
         "orange" => Orange,
         "bark" => Yellow,
         "sage" | "olive" => Green,
@@ -74,6 +75,10 @@ mod imp {
         pub(super) new_tab_row: TemplateChild<adw::SwitchRow>,
         #[template_child]
         pub(super) shortcuts_group: TemplateChild<adw::PreferencesGroup>,
+        #[template_child]
+        pub(super) reset_shortcuts_button: TemplateChild<gtk::Button>,
+        /// One ShortcutLabel per curated entry, for refreshing after a reset.
+        pub(super) shortcut_labels: RefCell<Vec<(&'static str, gtk::ShortcutLabel)>>,
         pub(super) settings: gio::Settings,
     }
 
@@ -87,6 +92,8 @@ mod imp {
                 keep_expanded_row: Default::default(),
                 new_tab_row: Default::default(),
                 shortcuts_group: Default::default(),
+                reset_shortcuts_button: Default::default(),
+                shortcut_labels: Default::default(),
                 settings: gio::Settings::new("org.gnome.Papers"),
             }
         }
@@ -133,14 +140,26 @@ mod imp {
             let accent = s.string("accent-source");
             self.accent_row
                 .set_selected(ACCENTS.iter().position(|a| *a == accent).unwrap_or(0) as u32);
+
+            // The collapsed row shows its own swatch, updated by hand: a
+            // factory-driven one only rebinds when the popup rebuilds, so it
+            // kept showing the previous colour until the dialog was reopened.
+            let current = SimpleColorSwatch::new();
+            current.set_size_request(16, 16);
+            current.set_valign(gtk::Align::Center);
+            current.set_color(accent_rgba(&accent));
+            self.accent_row.add_prefix(&current);
+
             self.accent_row.connect_selected_notify(glib::clone!(
                 #[weak(rename_to = obj)]
                 self,
+                #[weak]
+                current,
                 move |row| {
                     let idx = row.selected() as usize;
-                    let _ = obj
-                        .settings
-                        .set_string("accent-source", ACCENTS.get(idx).copied().unwrap_or("system"));
+                    let name = ACCENTS.get(idx).copied().unwrap_or("system");
+                    let _ = obj.settings.set_string("accent-source", name);
+                    current.set_color(accent_rgba(name));
                 }
             ));
 
@@ -211,7 +230,7 @@ mod imp {
                 swatch.set_color(accent_rgba(name));
             });
 
-            self.accent_row.set_factory(Some(&factory));
+            self.accent_row.set_list_factory(Some(&factory));
         }
 
         fn build_shortcut_rows(&self) {
@@ -234,8 +253,26 @@ mod imp {
                     move |_| obj.capture_shortcut(entry, label.clone())
                 ));
 
+                self.shortcut_labels
+                    .borrow_mut()
+                    .push((entry.default, label.clone()));
                 self.shortcuts_group.add(&row);
             }
+
+            self.reset_shortcuts_button.connect_clicked(glib::clone!(
+                #[weak(rename_to = obj)]
+                self,
+                move |_| {
+                    let _ = obj.settings.set_value(
+                        shortcuts::SETTINGS_KEY,
+                        &std::collections::HashMap::<String, String>::new().to_variant(),
+                    );
+
+                    for (default, label) in obj.shortcut_labels.borrow().iter() {
+                        label.set_accelerator(default);
+                    }
+                }
+            ));
         }
 
         /// A small dialog that waits for one key combination and stores it.

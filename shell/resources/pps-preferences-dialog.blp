@@ -94,6 +94,20 @@ template $PpsPreferencesDialog: Adw.PreferencesDialog {
     Adw.PreferencesGroup shortcuts_group {
       title: _("Customizable Shortcuts");
       description: _("Activate a row and press the new combination. Backspace resets to the default.");
+
+      header-suffix: Button reset_shortcuts_button {
+        styles [
+          "flat",
+        ]
+
+        valign: center;
+        tooltip-text: _("Restore all shortcuts to their defaults");
+
+        Adw.ButtonContent {
+          icon-name: "edit-undo-symbolic";
+          label: _("Reset All");
+        }
+      };
     }
   }
 }

@@ -74,6 +74,8 @@ mod imp {
         #[template_child]
         pub(super) sidebar_box: TemplateChild<gtk::Box>,
         #[template_child]
+        pub(super) sidebar_button: TemplateChild<gtk::ToggleButton>,
+        #[template_child]
         pub(super) narrow_breakpoint: TemplateChild<adw::Breakpoint>,
         #[template_child]
         pub(super) very_narrow_breakpoint: TemplateChild<adw::Breakpoint>,
@@ -289,6 +291,7 @@ mod imp {
             self.setup_zoom_menu();
             self.setup_sidebar_resizer();
             self.setup_custom_shortcuts();
+            self.setup_page_number_typing();
             self.sidebar_was_open_before_find.set(true);
 
             let page_cache_mb = self.settings.uint(GS_PAGE_CACHE_SIZE) as usize;
@@ -380,6 +383,49 @@ mod imp {
         /// It also frees the grab zone from the sidebar's bounds, so it can
         /// reach well into the document side where there is room, while barely
         /// intruding on the sidebar's own last column.
+        /// Typing a bare digit anywhere over the document starts entering a
+        /// page number. Digits are unused as shortcuts, and this is how a
+        /// reader who knows the page goes there without reaching for the
+        /// mouse. Bubble phase: an entry or text view that has focus consumes
+        /// its keys before this ever sees them.
+        fn setup_page_number_typing(&self) {
+            let key = gtk::EventControllerKey::new();
+            key.set_propagation_phase(gtk::PropagationPhase::Bubble);
+
+            key.connect_key_pressed(glib::clone!(
+                #[weak(rename_to = obj)]
+                self,
+                #[upgrade_or]
+                glib::Propagation::Proceed,
+                move |_, keyval, _, state| {
+                    if !(state & gtk::accelerator_get_default_mod_mask()).is_empty() {
+                        return glib::Propagation::Proceed;
+                    }
+
+                    // Belt and braces: never steal keys from something the
+                    // user is typing into.
+                    if obj
+                        .obj()
+                        .root()
+                        .and_then(|r| r.focus())
+                        .is_some_and(|w| w.is::<gtk::Text>() || w.is::<gtk::TextView>())
+                    {
+                        return glib::Propagation::Proceed;
+                    }
+
+                    let Some(digit) = keyval.to_unicode().filter(|c| c.is_ascii_digit()) else {
+                        return glib::Propagation::Proceed;
+                    };
+
+                    obj.page_selector.begin_typed_entry(&digit.to_string());
+
+                    glib::Propagation::Stop
+                }
+            ));
+
+            self.obj().add_controller(key);
+        }
+
         /// The customizable doc-scope shortcuts (sidebar, outline,
         /// duplicate-tab). Window-scope ones are application accels; these
         /// need a widget with the "doc" group in scope, which is this view.
@@ -395,6 +441,22 @@ mod imp {
                     let controller = crate::shortcuts::document_controller(&obj.settings);
                     obj.obj().add_controller(controller.clone());
                     obj.custom_shortcuts.replace(Some(controller));
+
+                    // The sidebar button advertises its (rebindable) hotkey.
+                    if let Some(entry) = crate::shortcuts::ENTRIES
+                        .iter()
+                        .find(|e| e.id == "toggle-sidebar")
+                    {
+                        let accel = crate::shortcuts::accel(&obj.settings, entry);
+                        let label = gtk::accelerator_parse(&accel)
+                            .map(|(k, m)| gtk::accelerator_get_label(k, m).to_string())
+                            .unwrap_or(accel);
+
+                        obj.sidebar_button.set_tooltip_text(Some(&format!(
+                            "{} ({label})",
+                            gettext("Toggle Sidebar")
+                        )));
+                    }
                 }
             );
 

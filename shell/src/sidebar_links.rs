@@ -329,6 +329,8 @@ mod imp {
         #[template_child]
         pub(super) popup: TemplateChild<gtk::PopoverMenu>,
         #[template_child]
+        pub(super) expand_toggle_button: TemplateChild<gtk::Button>,
+        #[template_child]
         pub(super) action_group: TemplateChild<gio::SimpleActionGroup>,
         #[property(name = "model", nullable, get)]
         pub(super) outlines: RefCell<Option<gio::ListModel>>,
@@ -533,6 +535,16 @@ mod imp {
                         // runs after the widget has had a chance to draw.
                         obj.selection_model.set_model(Some(&tree_model));
 
+                        // Any expansion or collapse inserts or removes rows,
+                        // so this one signal keeps the toggle button's
+                        // direction truthful however the change came about.
+                        tree_model.connect_items_changed(glib::clone!(
+                            #[weak]
+                            obj,
+                            move |_, _, _, _| obj.update_expand_toggle()
+                        ));
+                        obj.update_expand_toggle();
+
                         glib::idle_add_local_once(glib::clone!(
                             #[weak]
                             obj,
@@ -681,25 +693,54 @@ mod imp {
                 .and_then(|m| m.downcast::<gtk::TreeListModel>().ok())
         }
 
-        /// One-key toggle: any top-level section open means "collapse to
-        /// the chapters", none open means "expand everything".
-        pub(super) fn toggle_expansion(&self) {
+        #[template_callback]
+        fn expand_toggle_clicked(&self) {
+            self.toggle_expansion();
+        }
+
+        /// Whether any top-level section is currently open - the state the
+        /// toggle button and the F8 toggle both key off.
+        fn any_top_level_expanded(&self) -> bool {
             let Some(tree_model) = self.tree_model() else {
-                return;
+                return false;
             };
 
             let mut index = 0;
-            let mut any_expanded = false;
-
             while let Some(row) = tree_model.child_row(index) {
                 if row.is_expanded() {
-                    any_expanded = true;
-                    break;
+                    return true;
                 }
                 index += 1;
             }
 
-            if any_expanded {
+            false
+        }
+
+        /// Point the floating button at whichever direction the next toggle
+        /// takes: rows just appeared or vanished, so re-read the state.
+        pub(super) fn update_expand_toggle(&self) {
+            let expanded = self.any_top_level_expanded();
+
+            self.expand_toggle_button.set_icon_name(if expanded {
+                "pan-up-symbolic"
+            } else {
+                "pan-down-symbolic"
+            });
+            self.expand_toggle_button.set_tooltip_text(Some(&if expanded {
+                gettext("Collapse Outline (F8)")
+            } else {
+                gettext("Expand Outline (F8)")
+            }));
+        }
+
+        /// One-key toggle: any top-level section open means "collapse to
+        /// the chapters", none open means "expand everything".
+        pub(super) fn toggle_expansion(&self) {
+            if self.tree_model().is_none() {
+                return;
+            }
+
+            if self.any_top_level_expanded() {
                 self.collapse_all();
             } else {
                 self.expand_all();

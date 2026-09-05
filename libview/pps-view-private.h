@@ -79,6 +79,13 @@ typedef struct
 	GtkWidget *retired_popover;
 	guint retire_idle_id;
 	guint cleanup_idle_id;
+
+	/* Dismissal plumbing for the pinned preview, which has no autohide (an
+	 * autohide popover grabs the keyboard system-wide on X11). The window
+	 * ref is held so disconnecting on teardown is always safe. */
+	GtkWindow *root_window;
+	gulong active_handler_id;
+	GtkEventController *outside_click;
 } PpsLinkPreview;
 
 typedef struct
