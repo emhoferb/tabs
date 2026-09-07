@@ -204,11 +204,13 @@ is unobstructed. Applies to every tab and is remembered.
     the applied colour rather than the system's.
 25. **Changing the highlight style needed a restart** — the settings instance
     holding the subscription was dropped immediately.
-26. **Scrolling out of the pinned preview.** The scroll barrier sat in the
-    bubble phase, so the preview's scrolled window declined the event at its
-    edges and it went on to scroll the document behind — and to flip the
-    preview's own page. The barrier now runs in the capture phase and drives
-    the adjustment itself.
+26. **Scrolling and zooming acted on the document behind the pinned preview.**
+    A popover is its own surface, but a scroll with the pointer inside the
+    preview is still delivered to the document view, so nothing inside the
+    popover ever saw it. The document view now handles these on the preview's
+    behalf when the pointer is inside it: Ctrl+scroll zooms the preview, a
+    plain scroll moves it, and other modifiers are swallowed rather than
+    reaching the page underneath.
 27. **The file chooser's bookmark section was wrong** — added as shortcut
     folders, they appeared in the wrong place with no separator. They are now
     copied into the config directory GTK reads, so the sidebar looks like
