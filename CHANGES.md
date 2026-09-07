@@ -84,15 +84,19 @@ would not respond to the wheel or touchpad.
 
 ### Outline expand/collapse toggle
 
-`F8`, or the floating button at the top of the outline sidebar, expands the
-whole outline or collapses it back to just the top-level chapters — whichever
-the current state calls for. The button's arrow shows which way it will go.
+`F8`, or the button beside Search in the sidebar header, expands the whole
+outline or collapses it back to just the top-level chapters — whichever the
+current state calls for. The button carries the same chevron the outline rows
+use for their own expanders, pointing at what the next press will do, and is
+shown only while the outline is the visible sidebar page. *Expand and Collapse
+Button* in Preferences removes it; the shortcut works either way.
 
 ### Type a page number
 
 Typing a bare digit over the document focuses the page box with that digit
-already entered; finish the number and press Enter to jump. Digits were unused
-as shortcuts, so nothing is lost.
+already entered; finish the number and press Enter to jump. Enter also hands
+focus back to the document, so the next digit starts a fresh number. Digits
+were unused as shortcuts, so nothing is lost.
 
 ### Resizable sidebar
 
@@ -200,6 +204,15 @@ is unobstructed. Applies to every tab and is remembered.
     the applied colour rather than the system's.
 25. **Changing the highlight style needed a restart** — the settings instance
     holding the subscription was dropped immediately.
+26. **Scrolling out of the pinned preview.** The scroll barrier sat in the
+    bubble phase, so the preview's scrolled window declined the event at its
+    edges and it went on to scroll the document behind — and to flip the
+    preview's own page. The barrier now runs in the capture phase and drives
+    the adjustment itself.
+27. **The file chooser's bookmark section was wrong** — added as shortcut
+    folders, they appeared in the wrong place with no separator. They are now
+    copied into the config directory GTK reads, so the sidebar looks like
+    every other GTK app's.
 
 ### Upstream bugs worth reporting
 
@@ -245,6 +258,7 @@ All under `org.gnome.Papers`:
 | `show-zoom-overlay` | true | Floating controls |
 | `collapse-sidebar-when-narrow` | true | Auto-collapse below 720sp |
 | `custom-shortcuts` | `{}` | Per-action shortcut overrides (id → accel) |
+| `show-outline-toggle` | true | The expand/collapse button in the sidebar header |
 
 ---
 
