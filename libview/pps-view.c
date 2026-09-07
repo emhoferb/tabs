@@ -3548,6 +3548,15 @@ pps_view_size_allocate (GtkWidget *widget,
 static gboolean scroll_flip_page (PpsView *view,
                                   GtkEventControllerScroll *self,
                                   gdouble dy);
+static gboolean scroll_zoom_view (PpsView *view,
+                                  GtkEventControllerScroll *self,
+                                  gdouble dx,
+                                  gdouble dy);
+static gboolean link_preview_scroll_for_pinned (PpsView *view,
+                                                GtkEventControllerScroll *self,
+                                                gdouble dx,
+                                                gdouble dy,
+                                                guint state);
 
 static gboolean
 scroll_to_zoom_cb (GtkEventControllerScroll *self, gdouble dx, gdouble dy, GtkWidget *widget)
@@ -3555,34 +3564,121 @@ scroll_to_zoom_cb (GtkEventControllerScroll *self, gdouble dx, gdouble dy, GtkWi
 	PpsView *view = PPS_VIEW (widget);
 	PpsViewPrivate *priv = GET_PRIVATE (view);
 	guint state;
-	gint x, y;
 
 	state = gtk_event_controller_get_current_event_state (GTK_EVENT_CONTROLLER (self)) & gtk_accelerator_get_default_mod_mask ();
 
-	if (state == GDK_CONTROL_MASK) {
-		pps_document_model_set_sizing_mode (priv->model, PPS_SIZING_FREE);
-
-		pps_document_misc_get_pointer_position (widget, &x, &y);
-
-		priv->zoom_center_x = x;
-		priv->zoom_center_y = y;
-
-		gdouble delta = dx + dy;
-
-		if (gtk_event_controller_scroll_get_unit (self) == GDK_SCROLL_UNIT_SURFACE)
-			delta = delta / 20.;
-
-		gdouble factor = pow (delta < 0 ? ZOOM_IN_FACTOR : ZOOM_OUT_FACTOR, fabs (delta));
-
-		if (pps_view_can_zoom (view, factor))
-			pps_view_zoom (view, factor);
+	/* A pinned preview is a separate surface laid over the document, but
+	 * scrolls with the pointer inside it are still delivered here rather
+	 * than to it - which is how they used to end up zooming or scrolling
+	 * the document underneath. Handle them on the preview's behalf. */
+	if (priv->link_preview.pinned &&
+	    link_preview_scroll_for_pinned (view, self, dx, dy, state))
 		return TRUE;
-	}
+
+	if (state == GDK_CONTROL_MASK)
+		return scroll_zoom_view (view, self, dx, dy);
 
 	if (state == 0)
 		return scroll_flip_page (view, self, dy);
 
 	return FALSE;
+}
+
+/* Whether the pointer is inside the pinned preview, and if so, doing to the
+ * preview what the scroll asked for: Ctrl+scroll zooms it, a plain scroll
+ * moves it, and anything else is swallowed. Returns FALSE when there is no
+ * pinned preview under the pointer, leaving the document to scroll itself. */
+static gboolean
+link_preview_scroll_for_pinned (PpsView *view,
+                                GtkEventControllerScroll *self,
+                                gdouble dx,
+                                gdouble dy,
+                                guint state)
+{
+	PpsViewPrivate *priv = GET_PRIVATE (view);
+	GtkWidget *popover = priv->link_preview.popover;
+	GtkWidget *child;
+	GtkAdjustment *adj;
+	graphene_point_t src, dst;
+	gdouble delta, upper, page_size;
+	gint x, y;
+
+	if (!popover)
+		return FALSE;
+
+	pps_document_misc_get_pointer_position (GTK_WIDGET (view), &x, &y);
+	src = GRAPHENE_POINT_INIT ((float) x, (float) y);
+
+	if (!gtk_widget_compute_point (GTK_WIDGET (view), popover, &src, &dst) ||
+	    !gtk_widget_contains (popover, dst.x, dst.y))
+		return FALSE;
+
+	if (state == GDK_CONTROL_MASK) {
+		if (!priv->link_preview.view)
+			return TRUE;
+
+		return scroll_zoom_view (priv->link_preview.view, self, dx, dy);
+	}
+
+	if (state != 0)
+		return TRUE;
+
+	child = gtk_popover_get_child (GTK_POPOVER (popover));
+	if (!GTK_IS_SCROLLED_WINDOW (child))
+		return TRUE;
+
+	adj = gtk_scrolled_window_get_vadjustment (GTK_SCROLLED_WINDOW (child));
+	if (!adj)
+		return TRUE;
+
+	delta = dy;
+
+	/* Touchpads deliver surface pixels; a wheel click is one unit, which
+	 * has to be scaled to something worth seeing. */
+	if (gtk_event_controller_scroll_get_unit (self) != GDK_SCROLL_UNIT_SURFACE)
+		delta *= gtk_adjustment_get_step_increment (adj) * 3.;
+
+	upper = gtk_adjustment_get_upper (adj);
+	page_size = gtk_adjustment_get_page_size (adj);
+
+	gtk_adjustment_set_value (adj,
+	                          CLAMP (gtk_adjustment_get_value (adj) + delta,
+	                                 gtk_adjustment_get_lower (adj),
+	                                 MAX (upper - page_size, 0.)));
+
+	return TRUE;
+}
+
+/* Ctrl+scroll zooming, against whichever view is named - the document, or
+ * the one inside a pinned preview. */
+static gboolean
+scroll_zoom_view (PpsView *view,
+                  GtkEventControllerScroll *self,
+                  gdouble dx,
+                  gdouble dy)
+{
+	PpsViewPrivate *priv = GET_PRIVATE (view);
+	gdouble delta, factor;
+	gint x, y;
+
+	pps_document_model_set_sizing_mode (priv->model, PPS_SIZING_FREE);
+
+	pps_document_misc_get_pointer_position (GTK_WIDGET (view), &x, &y);
+
+	priv->zoom_center_x = x;
+	priv->zoom_center_y = y;
+
+	delta = dx + dy;
+
+	if (gtk_event_controller_scroll_get_unit (self) == GDK_SCROLL_UNIT_SURFACE)
+		delta = delta / 20.;
+
+	factor = pow (delta < 0 ? ZOOM_IN_FACTOR : ZOOM_OUT_FACTOR, fabs (delta));
+
+	if (pps_view_can_zoom (view, factor))
+		pps_view_zoom (view, factor);
+
+	return TRUE;
 }
 
 /* Two-finger scrolling and the wheel in non-continuous mode.
@@ -4124,44 +4220,6 @@ link_preview_outside_press_cb (GtkGestureClick *gesture,
 	gtk_gesture_set_state (GTK_GESTURE (gesture), GTK_EVENT_SEQUENCE_CLAIMED);
 }
 
-/* Scrolling inside the pinned preview must stay inside it.
- *
- * Letting the preview's own scrolled window handle the event is not enough:
- * at its top and bottom edge it declines the event, which then reaches the
- * document behind the popover, and on the way the preview's PpsView may take
- * it as a page flip. So this runs in the capture phase, ahead of both, moves
- * the adjustment by hand and always reports the event handled.
- */
-static gboolean
-link_preview_scroll_barrier_cb (GtkEventControllerScroll *controller,
-                                gdouble dx,
-                                gdouble dy,
-                                gpointer data)
-{
-	GtkScrolledWindow *swindow = data;
-	GtkAdjustment *adj = gtk_scrolled_window_get_vadjustment (swindow);
-	gdouble delta = dy;
-	gdouble upper, page_size;
-
-	if (!adj)
-		return TRUE;
-
-	/* Touchpads deliver surface pixels; a wheel click is one unit, which
-	 * has to be scaled to something worth seeing. */
-	if (gtk_event_controller_scroll_get_unit (controller) != GDK_SCROLL_UNIT_SURFACE)
-		delta *= gtk_adjustment_get_step_increment (adj) * 3.;
-
-	upper = gtk_adjustment_get_upper (adj);
-	page_size = gtk_adjustment_get_page_size (adj);
-
-	gtk_adjustment_set_value (adj,
-	                          CLAMP (gtk_adjustment_get_value (adj) + delta,
-	                                 gtk_adjustment_get_lower (adj),
-	                                 MAX (upper - page_size, 0.)));
-
-	return TRUE;
-}
-
 static void
 link_preview_watch_root (PpsView *view)
 {
@@ -4464,18 +4522,6 @@ link_preview_pin (PpsView *view)
 	priv->link_preview.retired_popover = popover;
 	priv->link_preview.retire_idle_id =
 	    g_idle_add (link_preview_drop_retired_cb, view);
-
-	/* Keep scroll events that hit the preview's edges from spilling into
-	 * the document behind it, or flipping the preview's own page. */
-	{
-		GtkEventController *barrier =
-		    gtk_event_controller_scroll_new (GTK_EVENT_CONTROLLER_SCROLL_BOTH_AXES |
-		                                     GTK_EVENT_CONTROLLER_SCROLL_KINETIC);
-		gtk_event_controller_set_propagation_phase (barrier, GTK_PHASE_CAPTURE);
-		g_signal_connect (barrier, "scroll",
-		                  G_CALLBACK (link_preview_scroll_barrier_cb), swindow);
-		gtk_widget_add_controller (pinned, barrier);
-	}
 
 	priv->link_preview.popover = pinned;
 	gtk_widget_set_parent (pinned, GTK_WIDGET (view));
