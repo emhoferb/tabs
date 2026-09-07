@@ -76,6 +76,8 @@ mod imp {
         #[template_child]
         pub(super) sidebar_button: TemplateChild<gtk::ToggleButton>,
         #[template_child]
+        pub(super) outline_toggle_button: TemplateChild<gtk::Button>,
+        #[template_child]
         pub(super) narrow_breakpoint: TemplateChild<adw::Breakpoint>,
         #[template_child]
         pub(super) very_narrow_breakpoint: TemplateChild<adw::Breakpoint>,
@@ -292,6 +294,7 @@ mod imp {
             self.setup_sidebar_resizer();
             self.setup_custom_shortcuts();
             self.setup_page_number_typing();
+            self.setup_outline_toggle_button();
             self.sidebar_was_open_before_find.set(true);
 
             let page_cache_mb = self.settings.uint(GS_PAGE_CACHE_SIZE) as usize;
@@ -383,6 +386,99 @@ mod imp {
         /// It also frees the grab zone from the sidebar's bounds, so it can
         /// reach well into the document side where there is room, while barely
         /// intruding on the sidebar's own last column.
+        /// The button only makes sense while the outline is the visible
+        /// sidebar page, and the preference can take it away entirely.
+        fn update_outline_toggle_visibility(&self) {
+            let on_outline = self
+                .sidebar
+                .visible_child_name()
+                .is_some_and(|name| name == "links");
+
+            self.outline_toggle_button
+                .set_visible(on_outline && self.settings.boolean("show-outline-toggle"));
+        }
+
+        /// A curated shortcut's accelerator, ready to show to a human.
+        pub(super) fn shortcut_label(&self, id: &str) -> Option<String> {
+            let entry = crate::shortcuts::ENTRIES.iter().find(|e| e.id == id)?;
+            let accel = crate::shortcuts::accel(&self.settings, entry);
+
+            Some(
+                gtk::accelerator_parse(&accel)
+                    .map(|(k, m)| gtk::accelerator_get_label(k, m).to_string())
+                    .unwrap_or(accel),
+            )
+        }
+
+        /// The outline expand/collapse button in the sidebar header.
+        ///
+        /// It is only meaningful while the outline is the visible sidebar
+        /// page, and the preference can remove it entirely - the shortcut
+        /// keeps working either way, which is the point of keeping the
+        /// binding on the action rather than on the button.
+        fn setup_outline_toggle_button(&self) {
+            self.update_outline_toggle_visibility();
+
+            self.sidebar
+                .connect_visible_child_name_notify(glib::clone!(
+                    #[weak(rename_to = obj)]
+                    self,
+                    move |_| obj.update_outline_toggle_visibility()
+                ));
+
+            self.settings.connect_changed(
+                Some("show-outline-toggle"),
+                glib::clone!(
+                    #[weak(rename_to = obj)]
+                    self,
+                    move |_, _| obj.update_outline_toggle_visibility()
+                ),
+            );
+
+            self.refresh_button_tooltips();
+
+            self.sidebar_links.connect_outline_expanded_notify(glib::clone!(
+                #[weak(rename_to = obj)]
+                self,
+                move |_| obj.refresh_button_tooltips()
+            ));
+        }
+
+        /// Icon direction and hotkey text for the two header buttons that
+        /// carry a rebindable shortcut. Cheap, and safe to call whenever the
+        /// shortcut map or the outline's expansion state changes.
+        pub(super) fn refresh_button_tooltips(&self) {
+            if let Some(accel) = self.shortcut_label("toggle-sidebar") {
+                self.sidebar_button.set_tooltip_text(Some(&format!(
+                    "{} ({accel})",
+                    gettext("Toggle Sidebar")
+                )));
+            }
+
+            let expanded = self.sidebar_links.outline_expanded();
+
+            // The same chevrons the outline rows use for their own expanders,
+            // so the button reads as "do this to all of them".
+            self.outline_toggle_button.set_icon_name(if expanded {
+                "pan-up-symbolic"
+            } else {
+                "pan-down-symbolic"
+            });
+
+            let label = if expanded {
+                gettext("Collapse Outline")
+            } else {
+                gettext("Expand Outline")
+            };
+
+            self.outline_toggle_button.set_tooltip_text(Some(
+                &match self.shortcut_label("outline-toggle") {
+                    Some(accel) => format!("{label} ({accel})"),
+                    None => label,
+                },
+            ));
+        }
+
         /// Typing a bare digit anywhere over the document starts entering a
         /// page number. Digits are unused as shortcuts, and this is how a
         /// reader who knows the page goes there without reaching for the
@@ -442,21 +538,8 @@ mod imp {
                     obj.obj().add_controller(controller.clone());
                     obj.custom_shortcuts.replace(Some(controller));
 
-                    // The sidebar button advertises its (rebindable) hotkey.
-                    if let Some(entry) = crate::shortcuts::ENTRIES
-                        .iter()
-                        .find(|e| e.id == "toggle-sidebar")
-                    {
-                        let accel = crate::shortcuts::accel(&obj.settings, entry);
-                        let label = gtk::accelerator_parse(&accel)
-                            .map(|(k, m)| gtk::accelerator_get_label(k, m).to_string())
-                            .unwrap_or(accel);
-
-                        obj.sidebar_button.set_tooltip_text(Some(&format!(
-                            "{} ({label})",
-                            gettext("Toggle Sidebar")
-                        )));
-                    }
+                    // The buttons advertise their (rebindable) hotkeys.
+                    obj.refresh_button_tooltips();
                 }
             );
 

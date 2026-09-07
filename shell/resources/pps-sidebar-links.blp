@@ -6,50 +6,31 @@ template $PpsSidebarLinks: $PpsSidebarPage {
     orientation: vertical;
 
     [start]
-    Overlay {
+    ScrolledWindow {
+      halign: fill;
+      hexpand: true;
       vexpand: true;
+      hscrollbar-policy: never;
 
-      child: ScrolledWindow {
-        halign: fill;
-        hexpand: true;
-        vexpand: true;
-        hscrollbar-policy: never;
+      child: ListView list_view {
+        tab-behavior: item;
 
-        child: ListView list_view {
-          tab-behavior: item;
-
-          model: SingleSelection selection_model {
-            autoselect: false;
-            selection-changed => $list_view_selection_changed() swapped;
-          };
-
-          factory: SignalListItemFactory {
-            setup => $list_view_factory_setup() swapped;
-            bind => $list_view_factory_bind() swapped;
-            unbind => $list_view_factory_unbind() swapped;
-          };
-
-          styles [
-            "navigation-sidebar",
-            "pps-outline",
-          ]
+        model: SingleSelection selection_model {
+          autoselect: false;
+          selection-changed => $list_view_selection_changed() swapped;
         };
-      };
 
-      [overlay]
-      Button expand_toggle_button {
+        factory: SignalListItemFactory {
+          setup => $list_view_factory_setup() swapped;
+          bind => $list_view_factory_bind() swapped;
+          unbind => $list_view_factory_unbind() swapped;
+        };
+
         styles [
-          "osd",
-          "circular",
+          "navigation-sidebar",
+          "pps-outline",
         ]
-
-        halign: end;
-        valign: start;
-        margin-top: 6;
-        margin-end: 16;
-        icon-name: "pan-down-symbolic";
-        clicked => $expand_toggle_clicked() swapped;
-      }
+      };
     }
 
     PopoverMenu popup {

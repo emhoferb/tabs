@@ -86,6 +86,16 @@ template $PpsDocumentView: Adw.BreakpointBin {
             reveal-child: bind find_button.sensitive;
           }
 
+          /* Beside the search button rather than floating over the list.
+           * Shown only while the outline is the visible sidebar page, and
+           * only when the preference allows - the F8 shortcut works either
+           * way. */
+          [start]
+          Button outline_toggle_button {
+            icon-name: "pan-end-symbolic";
+            action-name: "doc.outline-toggle";
+          }
+
           [title]
           Adw.WindowTitle {
             title: _("Document Viewer");

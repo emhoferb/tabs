@@ -3610,6 +3610,11 @@ scroll_flip_page (PpsView *view,
 	if (pps_document_model_get_continuous (priv->model))
 		return FALSE;
 
+	/* A view inside a pinned preview is scrolled by the popover's own
+	 * barrier; it must never turn its page on a stray scroll. */
+	if (priv->is_link_preview)
+		return FALSE;
+
 	if (dy == 0.)
 		return FALSE;
 
@@ -4119,15 +4124,41 @@ link_preview_outside_press_cb (GtkGestureClick *gesture,
 	gtk_gesture_set_state (GTK_GESTURE (gesture), GTK_EVENT_SEQUENCE_CLAIMED);
 }
 
-/* Scrolling inside the pinned preview must stay inside it: once its
- * scrolled window hits an edge the event would bubble on - the popover is a
- * widget child of the view - and start moving the main document. */
+/* Scrolling inside the pinned preview must stay inside it.
+ *
+ * Letting the preview's own scrolled window handle the event is not enough:
+ * at its top and bottom edge it declines the event, which then reaches the
+ * document behind the popover, and on the way the preview's PpsView may take
+ * it as a page flip. So this runs in the capture phase, ahead of both, moves
+ * the adjustment by hand and always reports the event handled.
+ */
 static gboolean
 link_preview_scroll_barrier_cb (GtkEventControllerScroll *controller,
                                 gdouble dx,
                                 gdouble dy,
                                 gpointer data)
 {
+	GtkScrolledWindow *swindow = data;
+	GtkAdjustment *adj = gtk_scrolled_window_get_vadjustment (swindow);
+	gdouble delta = dy;
+	gdouble upper, page_size;
+
+	if (!adj)
+		return TRUE;
+
+	/* Touchpads deliver surface pixels; a wheel click is one unit, which
+	 * has to be scaled to something worth seeing. */
+	if (gtk_event_controller_scroll_get_unit (controller) != GDK_SCROLL_UNIT_SURFACE)
+		delta *= gtk_adjustment_get_step_increment (adj) * 3.;
+
+	upper = gtk_adjustment_get_upper (adj);
+	page_size = gtk_adjustment_get_page_size (adj);
+
+	gtk_adjustment_set_value (adj,
+	                          CLAMP (gtk_adjustment_get_value (adj) + delta,
+	                                 gtk_adjustment_get_lower (adj),
+	                                 MAX (upper - page_size, 0.)));
+
 	return TRUE;
 }
 
@@ -4435,12 +4466,14 @@ link_preview_pin (PpsView *view)
 	    g_idle_add (link_preview_drop_retired_cb, view);
 
 	/* Keep scroll events that hit the preview's edges from spilling into
-	 * the document behind it. */
+	 * the document behind it, or flipping the preview's own page. */
 	{
 		GtkEventController *barrier =
-		    gtk_event_controller_scroll_new (GTK_EVENT_CONTROLLER_SCROLL_BOTH_AXES);
+		    gtk_event_controller_scroll_new (GTK_EVENT_CONTROLLER_SCROLL_BOTH_AXES |
+		                                     GTK_EVENT_CONTROLLER_SCROLL_KINETIC);
+		gtk_event_controller_set_propagation_phase (barrier, GTK_PHASE_CAPTURE);
 		g_signal_connect (barrier, "scroll",
-		                  G_CALLBACK (link_preview_scroll_barrier_cb), NULL);
+		                  G_CALLBACK (link_preview_scroll_barrier_cb), swindow);
 		gtk_widget_add_controller (pinned, barrier);
 	}
 

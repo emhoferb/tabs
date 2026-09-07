@@ -48,6 +48,7 @@ mod imp {
             gtk::Window::set_default_icon_name(APP_ID);
 
             self.setup_actions();
+            self.sync_desktop_bookmarks();
         }
 
         fn shutdown(&self) {
@@ -466,6 +467,48 @@ mod imp {
 
             dialog.add(section);
             dialog.present(self.obj().active_window().as_ref());
+        }
+
+        /// Make the user's own bookmarks visible to the file chooser.
+        ///
+        /// GTK reads them from `$XDG_CONFIG_HOME/gtk-3.0/bookmarks`, which
+        /// inside the sandbox is the app's private config directory - so the
+        /// sidebar comes up with none of the user's places. The real file is
+        /// readable through the home mount, so it is copied across before any
+        /// chooser is built. Copying rather than adding shortcut folders to
+        /// the dialog is what makes the result look like every other GTK app:
+        /// the bookmarks land in their own section, under their own heading,
+        /// in the order the user arranged them.
+        fn sync_desktop_bookmarks(&self) {
+            let host = glib::home_dir().join(".config").join("gtk-3.0").join("bookmarks");
+
+            let Ok(bookmarks) = std::fs::read_to_string(&host) else {
+                return;
+            };
+
+            let dir = glib::user_config_dir().join("gtk-3.0");
+
+            // Only inside the sandbox do the two paths differ; unsandboxed,
+            // this would be copying the file onto itself.
+            if dir == host.parent().unwrap_or(&dir) {
+                return;
+            }
+
+            if std::fs::create_dir_all(&dir).is_err() {
+                return;
+            }
+
+            let target = dir.join("bookmarks");
+
+            // Don't rewrite an unchanged file: GTK watches it, and a needless
+            // touch makes every window rebuild its places sidebar.
+            if std::fs::read_to_string(&target).is_ok_and(|existing| existing == bookmarks) {
+                return;
+            }
+
+            if let Err(e) = std::fs::write(&target, &bookmarks) {
+                glib::g_warning!("", "Failed to copy bookmarks: {e}");
+            }
         }
 
         fn setup_command_line(&self) {

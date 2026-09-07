@@ -1409,29 +1409,6 @@ mod imp {
                 let _ = chooser.set_current_folder(Some(&gio::File::for_path(folder)));
             }
 
-            // The sandbox points XDG_CONFIG_HOME at ~/.var/app/…, so GTK
-            // never finds the bookmarks the user actually has. The real ones
-            // are readable through the home mount - feed them in as shortcut
-            // folders. gtk-4.0 first, the gtk-3.0 file (what Nautilus and
-            // most desktops still write) as fallback.
-            for name in ["gtk-4.0", "gtk-3.0"] {
-                let path = glib::home_dir().join(".config").join(name).join("bookmarks");
-
-                let Ok(bookmarks) = std::fs::read_to_string(&path) else {
-                    continue;
-                };
-
-                for line in bookmarks.lines() {
-                    let uri = line.split_whitespace().next().unwrap_or_default();
-
-                    if !uri.is_empty() {
-                        let _ = chooser.add_shortcut_folder(&gio::File::for_uri(uri));
-                    }
-                }
-
-                break;
-            }
-
             chooser.connect_response(glib::clone!(
                 #[weak(rename_to = obj)]
                 self,

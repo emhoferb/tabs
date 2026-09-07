@@ -117,6 +117,11 @@ impl imp::PpsDocumentView {
     #[template_callback]
     fn link_activated(&self, link: &papers_document::Link) {
         self.view.handle_link(link);
+
+        // Leave the page box once the jump is made. Otherwise the entry keeps
+        // the focus and the next digit typed is appended to the number just
+        // used, rather than starting a new one.
+        self.view.grab_focus();
     }
 
     #[template_callback]

@@ -328,8 +328,10 @@ mod imp {
         pub(super) selection_model: TemplateChild<gtk::SingleSelection>,
         #[template_child]
         pub(super) popup: TemplateChild<gtk::PopoverMenu>,
-        #[template_child]
-        pub(super) expand_toggle_button: TemplateChild<gtk::Button>,
+        /// Whether any top-level section is open. The sidebar header's
+        /// toggle button points its arrow at whatever the next press does.
+        #[property(get, set)]
+        pub(super) outline_expanded: std::cell::Cell<bool>,
         #[template_child]
         pub(super) action_group: TemplateChild<gio::SimpleActionGroup>,
         #[property(name = "model", nullable, get)]
@@ -693,11 +695,6 @@ mod imp {
                 .and_then(|m| m.downcast::<gtk::TreeListModel>().ok())
         }
 
-        #[template_callback]
-        fn expand_toggle_clicked(&self) {
-            self.toggle_expansion();
-        }
-
         /// Whether any top-level section is currently open - the state the
         /// toggle button and the F8 toggle both key off.
         fn any_top_level_expanded(&self) -> bool {
@@ -716,21 +713,14 @@ mod imp {
             false
         }
 
-        /// Point the floating button at whichever direction the next toggle
-        /// takes: rows just appeared or vanished, so re-read the state.
+        /// Republish the expansion state: rows just appeared or vanished,
+        /// so re-read it and let the header button follow.
         pub(super) fn update_expand_toggle(&self) {
             let expanded = self.any_top_level_expanded();
 
-            self.expand_toggle_button.set_icon_name(if expanded {
-                "pan-up-symbolic"
-            } else {
-                "pan-down-symbolic"
-            });
-            self.expand_toggle_button.set_tooltip_text(Some(&if expanded {
-                gettext("Collapse Outline (F8)")
-            } else {
-                gettext("Expand Outline (F8)")
-            }));
+            if expanded != self.outline_expanded.get() {
+                self.obj().set_outline_expanded(expanded);
+            }
         }
 
         /// One-key toggle: any top-level section open means "collapse to

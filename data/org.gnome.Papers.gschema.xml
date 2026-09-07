@@ -72,6 +72,11 @@
       <default>true</default>
       <summary>Open further documents in a new tab rather than a new window.</summary>
     </key>
+    <key name="show-outline-toggle" type="b">
+      <default>true</default>
+      <summary>Show the outline expand/collapse button in the side bar header.</summary>
+      <description>The keyboard shortcut works whether or not the button is shown.</description>
+    </key>
     <key name="custom-shortcuts" type="a{ss}">
       <default>{}</default>
       <summary>Overrides for the customizable shortcuts.</summary>

@@ -74,6 +74,8 @@ mod imp {
         #[template_child]
         pub(super) new_tab_row: TemplateChild<adw::SwitchRow>,
         #[template_child]
+        pub(super) outline_toggle_row: TemplateChild<adw::SwitchRow>,
+        #[template_child]
         pub(super) shortcuts_group: TemplateChild<adw::PreferencesGroup>,
         #[template_child]
         pub(super) reset_shortcuts_button: TemplateChild<gtk::Button>,
@@ -91,6 +93,7 @@ mod imp {
                 zoom_overlay_row: Default::default(),
                 keep_expanded_row: Default::default(),
                 new_tab_row: Default::default(),
+                outline_toggle_row: Default::default(),
                 shortcuts_group: Default::default(),
                 reset_shortcuts_button: Default::default(),
                 shortcut_labels: Default::default(),
@@ -174,6 +177,8 @@ mod imp {
             s.bind("keep-outline-expanded", &*self.keep_expanded_row, "active")
                 .build();
             s.bind("open-in-new-tab", &*self.new_tab_row, "active")
+                .build();
+            s.bind("show-outline-toggle", &*self.outline_toggle_row, "active")
                 .build();
 
             self.setup_accent_swatches();

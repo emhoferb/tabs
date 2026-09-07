@@ -73,6 +73,11 @@ template $PpsPreferencesDialog: Adw.PreferencesDialog {
         title: _("Keep Sections Expanded");
         subtitle: _("Sections opened while scrolling stay open instead of collapsing again");
       }
+
+      Adw.SwitchRow outline_toggle_row {
+        title: _("Expand and Collapse Button");
+        subtitle: _("A button beside Search that opens or closes the whole outline; its shortcut works either way");
+      }
     }
 
     Adw.PreferencesGroup {
