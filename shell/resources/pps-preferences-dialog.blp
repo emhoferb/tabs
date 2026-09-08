@@ -24,6 +24,19 @@ template $PpsPreferencesDialog: Adw.PreferencesDialog {
         };
       }
 
+      Adw.ComboRow tab_highlight_row {
+        title: _("Selected Tab");
+        subtitle: _("How the tab you are reading is marked");
+
+        model: StringList {
+          strings [
+            _("Underlined"),
+            _("Filled"),
+            _("Plain grey"),
+          ]
+        };
+      }
+
       Adw.ComboRow accent_row {
         title: _("Accent Colour");
         subtitle: _("Follow the desktop, or pick a fixed colour");

@@ -11,6 +11,9 @@ use crate::deps::*;
 pub const HL_OUTLINE: &str = "pps-hl-outline";
 pub const HL_FILL: &str = "pps-hl-fill";
 
+const TAB_UNDERLINE: &str = "pps-tab-underline";
+const TAB_FILLED: &str = "pps-tab-filled";
+
 fn settings() -> gio::Settings {
     // One shared instance for the whole process. A fresh instance per call
     // used to be dropped as soon as the caller returned, killing its
@@ -43,6 +46,40 @@ pub fn track_highlight_style(widget: &impl IsA<gtk::Widget>) {
             }
         ),
     );
+}
+
+/// Apply the configured style for the selected tab, and keep it in step.
+///
+/// Separate from the list highlight above, and deliberately so: these are two
+/// preferences about two different things.
+pub fn track_tab_highlight_style(widget: &impl IsA<gtk::Widget>) {
+    let widget = widget.as_ref().clone();
+    let settings = settings();
+
+    apply_tab_highlight_style(&widget, &settings.string("tab-highlight-style"));
+
+    settings.connect_changed(
+        Some("tab-highlight-style"),
+        glib::clone!(
+            #[weak]
+            widget,
+            move |settings, _| {
+                apply_tab_highlight_style(&widget, &settings.string("tab-highlight-style"));
+            }
+        ),
+    );
+}
+
+fn apply_tab_highlight_style(widget: &gtk::Widget, style: &str) {
+    widget.remove_css_class(TAB_UNDERLINE);
+    widget.remove_css_class(TAB_FILLED);
+
+    // "default" adds nothing, leaving the grey libadwaita draws itself.
+    match style {
+        "underline" => widget.add_css_class(TAB_UNDERLINE),
+        "filled" => widget.add_css_class(TAB_FILLED),
+        _ => {}
+    }
 }
 
 fn apply_highlight_style(widget: &gtk::Widget, style: &str) {

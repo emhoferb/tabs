@@ -53,6 +53,16 @@
       <summary>How the selected row in the side bar lists is marked.</summary>
       <description>Either a filled background or just a coloured border, as the search results list uses.</description>
     </key>
+    <key name="tab-highlight-style" type="s">
+      <choices>
+        <choice value="underline"/>
+        <choice value="filled"/>
+        <choice value="default"/>
+      </choices>
+      <default>'underline'</default>
+      <summary>How the selected tab is marked.</summary>
+      <description>"underline" tints the tab and underlines it in the accent colour, "filled" only tints it, and "default" leaves the plain grey libadwaita draws. Independent of highlight-style, which is about the side bar lists.</description>
+    </key>
     <key name="accent-source" type="s">
       <default>'system'</default>
       <summary>Where the accent colour comes from.</summary>

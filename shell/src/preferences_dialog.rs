@@ -33,6 +33,9 @@ const ACCENTS: [&str; 12] = [
 
 const HIGHLIGHTS: [&str; 2] = ["outline", "fill"];
 
+/// Tab marking choices, in the order the combo row lists them.
+const TAB_HIGHLIGHTS: [&str; 3] = ["underline", "filled", "default"];
+
 /// The colour each ACCENTS entry applies, for the swatches in the combo row.
 /// Mirrors named_accents in pps-colors.c: the Yaru names resolve to the
 /// nearest libadwaita accent, so neighbours like sage and olive genuinely
@@ -64,6 +67,8 @@ mod imp {
         #[template_child]
         pub(super) highlight_row: TemplateChild<adw::ComboRow>,
         #[template_child]
+        pub(super) tab_highlight_row: TemplateChild<adw::ComboRow>,
+        #[template_child]
         pub(super) accent_row: TemplateChild<adw::ComboRow>,
         #[template_child]
         pub(super) collapse_sidebar_row: TemplateChild<adw::SwitchRow>,
@@ -88,6 +93,7 @@ mod imp {
         fn default() -> Self {
             Self {
                 highlight_row: Default::default(),
+                tab_highlight_row: Default::default(),
                 accent_row: Default::default(),
                 collapse_sidebar_row: Default::default(),
                 zoom_overlay_row: Default::default(),
@@ -137,6 +143,22 @@ mod imp {
                     let _ = obj
                         .settings
                         .set_string("highlight-style", HIGHLIGHTS.get(idx).copied().unwrap_or("outline"));
+                }
+            ));
+
+            let tab_style = s.string("tab-highlight-style");
+            self.tab_highlight_row.set_selected(
+                TAB_HIGHLIGHTS.iter().position(|t| *t == tab_style).unwrap_or(0) as u32,
+            );
+            self.tab_highlight_row.connect_selected_notify(glib::clone!(
+                #[weak(rename_to = obj)]
+                self,
+                move |row| {
+                    let idx = row.selected() as usize;
+                    let _ = obj.settings.set_string(
+                        "tab-highlight-style",
+                        TAB_HIGHLIGHTS.get(idx).copied().unwrap_or("underline"),
+                    );
                 }
             ));
 
