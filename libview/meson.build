@@ -80,6 +80,7 @@ sources = files(
   'pps-view-presentation.c',
   'pps-css-utils.c',
   'pps-annotation-overlay.c',
+  'pps-animation-player.c',
   'pps-annotation-layer.c',
   'pps-annotation-layer-objects.c',
   'pps-annotation-layer-ink.c'

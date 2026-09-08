@@ -15,6 +15,7 @@
 #include "pps-jobs.h"
 #include "pps-page-cache.h"
 #include "pps-view-cursor.h"
+#include "pps-animation-player.h"
 #include "pps-view-presentation.h"
 
 G_GNUC_BEGIN_IGNORE_DEPRECATIONS
@@ -65,6 +66,9 @@ struct _PpsViewPresentationPrivate {
 	/* Goto Window */
 	GtkWidget *goto_popup;
 	GtkWidget *goto_entry;
+
+	/* Plays any animate-package animations the current slide carries. */
+	PpsAnimationPlayer *animation_player;
 
 	/* Page Transition */
 	guint trans_timeout_id;
@@ -515,6 +519,8 @@ pps_view_presentation_update_current_page (PpsViewPresentation *pview,
 		g_object_notify (G_OBJECT (pview), "current-page");
 	}
 
+	pps_animation_player_set_page (priv->animation_player, priv->document, (gint) page);
+
 	if (priv->page_cache)
 		pps_page_cache_set_page_range (priv->page_cache, page, page);
 
@@ -854,6 +860,7 @@ pps_view_presentation_dispose (GObject *object)
 	g_clear_object (&priv->previous_texture);
 
 	g_clear_pointer (&priv->goto_popup, gtk_widget_unparent);
+	g_clear_pointer (&priv->animation_player, pps_animation_player_free);
 
 	g_clear_handle_id (&priv->trans_timeout_id, g_source_remove);
 	g_clear_handle_id (&priv->hide_cursor_timeout_id, g_source_remove);
@@ -1073,6 +1080,18 @@ pps_view_presentation_snapshot (GtkWidget *widget, GtkSnapshot *snapshot)
 		pps_view_presentation_animation_snapshot (pview, document_snapshot, &area);
 	else
 		gtk_snapshot_append_texture (document_snapshot, priv->current_texture, &area);
+
+	/* On top of the slide, and inside the same node, so night mode inverts
+	 * the frames along with the page. */
+	if (pps_animation_player_is_playing (priv->animation_player)) {
+		gdouble page_width, page_height;
+
+		pps_document_get_page_size (priv->document, priv->current_page,
+		                            &page_width, &page_height);
+		pps_animation_player_snapshot (priv->animation_player, document_snapshot,
+		                               &page_area, page_width, page_height,
+		                               priv->rotation);
+	}
 
 	document_node = gtk_snapshot_free_to_node (document_snapshot);
 
@@ -1508,6 +1527,7 @@ pps_view_presentation_init (PpsViewPresentation *pview)
 	PpsViewPresentationPrivate *priv = GET_PRIVATE (pview);
 
 	priv->is_constructing = TRUE;
+	priv->animation_player = pps_animation_player_new (GTK_WIDGET (pview));
 
 	gtk_widget_init_template (GTK_WIDGET (pview));
 }
