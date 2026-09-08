@@ -120,6 +120,7 @@ mod imp {
 
             self.setup_actions();
             self.setup_zoom_overlay();
+            self.setup_tab_dnd();
 
             self.obj()
                 .change_action_state("night-mode", &self.settings.boolean("night-mode").into());
@@ -135,6 +136,14 @@ mod imp {
 
     impl WindowImpl for PpsWindow {
         fn close_request(&self) -> glib::Propagation {
+            // A window with no tabs has nothing to ask about, and asking
+            // anyway would go through document_view(), which creates a tab on
+            // demand - so a window whose last tab was dragged away would get
+            // a fresh empty one and stay open holding it.
+            if self.tab_view.n_pages() == 0 {
+                return self.parent_close_request();
+            }
+
             if self.document_view().close_handled() == glib::Propagation::Stop {
                 return glib::Propagation::Stop;
             }
@@ -217,6 +226,67 @@ mod imp {
             }
 
             self.add_tab()
+        }
+
+        /// Dragging a tab out of the window.
+        ///
+        /// libadwaita answers a drop outside any tab bar by calling
+        /// adw_tab_view_create_window(), and logs a critical when nothing
+        /// handles it - fatal in this build, so the drag took the window down
+        /// with it. Handling it is also what the crash was standing in front
+        /// of: the tab becomes a window of its own.
+        fn setup_tab_dnd(&self) {
+            self.tab_view.connect_create_window(|_| {
+                let window = super::PpsWindow::default();
+
+                // Presented before the page moves: libadwaita cannot hand a
+                // page to a window that is not up yet.
+                window.present();
+
+                Some(window.imp().tab_view.clone())
+            });
+
+            // A page that arrives from another window still points its tab bar
+            // at the tab view it came from, and a window created to receive it
+            // is still showing its start page.
+            self.tab_view.connect_page_attached(glib::clone!(
+                #[weak(rename_to = obj)]
+                self,
+                move |_, page, _| {
+                    let Ok(view) = page.child().downcast::<PpsDocumentView>() else {
+                        return;
+                    };
+
+                    view.set_tab_view(&obj.tab_view);
+
+                    // Only for a tab that carries a document: an empty one is
+                    // the tab a fresh window creates for itself, and switching
+                    // then would replace the start page with a blank view.
+                    if !view.is_empty() {
+                        obj.set_mode(WindowRunMode::Normal);
+                    }
+                }
+            ));
+
+            // Nothing left to show once the last tab has been dragged away.
+            // Checked from an idle, and not before: during a transfer the page
+            // can still be attached here when this fires, and the drag is
+            // still being dispatched.
+            self.tab_view.connect_page_detached(glib::clone!(
+                #[weak(rename_to = obj)]
+                self,
+                move |_, _, _| {
+                    glib::idle_add_local_once(glib::clone!(
+                        #[weak]
+                        obj,
+                        move || {
+                            if obj.tab_view.n_pages() == 0 {
+                                obj.obj().close();
+                            }
+                        }
+                    ));
+                }
+            ));
         }
 
         /// The tab page holding `view`, if it is still in the tab view.
