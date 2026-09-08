@@ -29,8 +29,12 @@ struct _PpsDocumentAnimationsInterface {
 	GTypeInterface base_iface;
 
 	/* Methods */
+	/* By index, not by PpsPage: pages are cached behind weak references and
+	 * created on demand, so asking for one just to read its number means
+	 * building and destroying an object on the main thread every time a
+	 * page scrolls by - and racing whatever job thread is rendering it. */
 	PpsMappingList *(*get_animation_mapping) (PpsDocumentAnimations *document_animations,
-	                                          PpsPage *page);
+	                                          gint page);
 	cairo_surface_t *(*render_frame) (PpsDocumentAnimations *document_animations,
 	                                  PpsAnimation *animation,
 	                                  guint frame,
@@ -39,7 +43,7 @@ struct _PpsDocumentAnimationsInterface {
 
 PPS_PUBLIC
 PpsMappingList *pps_document_animations_get_animation_mapping (PpsDocumentAnimations *document_animations,
-                                                               PpsPage *page);
+                                                               gint page);
 
 /* Renders one frame at @scale, sized to the animation's own rectangle. */
 PPS_PUBLIC

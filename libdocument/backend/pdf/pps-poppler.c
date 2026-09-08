@@ -4194,7 +4194,7 @@ pdf_document_get_animations (PdfDocument *self)
 
 static PpsMappingList *
 pdf_document_animations_get_animation_mapping (PpsDocumentAnimations *document_animations,
-                                               PpsPage *page)
+                                               gint page)
 {
 	PdfDocument *self = PDF_DOCUMENT (document_animations);
 	PpsPdfAnimations *animations;
@@ -4203,7 +4203,7 @@ pdf_document_animations_get_animation_mapping (PpsDocumentAnimations *document_a
 
 	g_mutex_lock (&self->animations_mutex);
 	animations = pdf_document_get_animations (self);
-	found = animations ? pps_pdf_animations_for_page (animations, page->index) : NULL;
+	found = animations ? pps_pdf_animations_for_page (animations, (guint) page) : NULL;
 	g_mutex_unlock (&self->animations_mutex);
 
 	if (!found)
@@ -4225,7 +4225,7 @@ pdf_document_animations_get_animation_mapping (PpsDocumentAnimations *document_a
 		retval = g_list_prepend (retval, mapping);
 	}
 
-	return pps_mapping_list_new (page->index, g_list_reverse (retval),
+	return pps_mapping_list_new ((guint) page, g_list_reverse (retval),
 	                             (GDestroyNotify) g_object_unref);
 }
 

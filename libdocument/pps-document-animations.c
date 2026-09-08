@@ -16,7 +16,7 @@ pps_document_animations_default_init (PpsDocumentAnimationsInterface *klass)
 
 PpsMappingList *
 pps_document_animations_get_animation_mapping (PpsDocumentAnimations *document_animations,
-                                               PpsPage *page)
+                                               gint page)
 {
 	PpsDocumentAnimationsInterface *iface = PPS_DOCUMENT_ANIMATIONS_GET_IFACE (document_animations);
 

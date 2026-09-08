@@ -141,8 +141,6 @@ pps_animation_player_set_page (PpsAnimationPlayer *player,
                                PpsDocument *document,
                                gint page)
 {
-	PpsPage *doc_page;
-
 	g_return_if_fail (player != NULL);
 
 	stop (player);
@@ -156,14 +154,9 @@ pps_animation_player_set_page (PpsAnimationPlayer *player,
 	if (!document || page < 0 || !PPS_IS_DOCUMENT_ANIMATIONS (document))
 		return;
 
-	doc_page = pps_document_get_page (document, page);
-	if (!doc_page)
-		return;
-
 	player->animations =
 	    pps_document_animations_get_animation_mapping (PPS_DOCUMENT_ANIMATIONS (document),
-	                                                   doc_page);
-	g_object_unref (doc_page);
+	                                                   page);
 
 	start (player);
 }
