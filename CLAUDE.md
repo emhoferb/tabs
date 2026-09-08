@@ -39,6 +39,13 @@ Two languages, split by directory. This split decides where a change goes:
   preferences.
 - **`shell/resources/*.blp`** are Blueprint templates compiled to `.ui`.
 - **`libview/context/`** holds the model and context objects shared by both.
+- **`libdocument/backend/pdf/pps-pdf-animation.cc` is C++** — the only C++ in
+  the project. It uses poppler's core classes because poppler-glib exposes no
+  form field icons; the manifest passes `ENABLE_UNSTABLE_API_ABI_HEADERS=ON`
+  so those headers exist at build time. Note that `CairoOutputDev` is *not*
+  exported by any installed library, and `GfxColorSpace::parse()` faults on
+  the null resources/state a non-rendering caller has — hence the hand-rolled
+  colour space handling there.
 
 `PpsDocumentView` owns everything per-document — model, sidebars, and 61 of the
 67 actions under a scoped `"doc"` action group. `PpsWindow` owns 6 window-level

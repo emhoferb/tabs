@@ -75,6 +75,22 @@ From the main menu. Contains:
   refused. The accent chooser shows a coloured swatch for each option, including
   the resolved colour behind "Follow system".
 
+### Animated slides
+
+Slides built with the LaTeX **animate** package now play. The package embeds
+no GIF and no video: each frame is a hidden form field whose icon is that
+frame, and a viewer plays it by copying icons onto a visible button from
+JavaScript — which is why these animations move in Acrobat and Okular and
+stand still in Evince and Papers.
+
+This fork reads that structure directly instead of running the document's
+JavaScript, and advances frames at the rate the document asks for. Playback
+starts on its own; a page scrolled out of view stops costing anything.
+
+Limits, both chosen to fail by showing a still page rather than a wrong one:
+frames must be 8-bit images in a device or ICCBased colour space, and an
+animation whose frame is anything but a single image is left alone.
+
 ### Two-finger and wheel page flipping
 
 In non-continuous (single-page) view, scrolling past the edge of a page turns to
@@ -266,9 +282,10 @@ All under `org.gnome.Papers`:
 
 ## Not done
 
-- **GIFs in slides.** `GtkVideo` via `pps_view_put()` is the landing pad —
-  upstream's own commit removing the GStreamer player says that is its purpose.
-  Needs a slide deck to see what poppler reports for the embedded media.
+- **Video and audio in PDFs.** Screen and RichMedia annotations that carry a
+  real media file are still not played; `GtkVideo` via `pps_view_put()` is the
+  landing pad. Note that the animate-package slides that prompted this are
+  *not* such files — see *Animated slides*.
 - **Outline tracking while scrolling** is much improved but still driven by page
   number alone. Matching Evince would need the view's scroll offset within the
   page, which the sidebar cannot currently see.
