@@ -292,6 +292,10 @@ mod imp {
 
             self.setup_zoom_menu();
             self.setup_sidebar_resizer();
+
+            // The selected tab is marked the same way the sidebar lists mark
+            // their selection, so the preference covers the whole window.
+            crate::style::track_highlight_style(&*self.tab_bar);
             self.setup_custom_shortcuts();
             self.setup_page_number_typing();
             self.setup_outline_toggle_button();
