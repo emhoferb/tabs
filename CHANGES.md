@@ -85,7 +85,9 @@ stand still in Evince and Papers.
 
 This fork reads that structure directly instead of running the document's
 JavaScript, and advances frames at the rate the document asks for. Playback
-starts on its own; a page scrolled out of view stops costing anything.
+starts on its own; a page scrolled out of view stops costing anything. It
+works in presentation mode as well, where the frames are scaled to the slide
+and inverted along with it in night mode.
 
 Limits, both chosen to fail by showing a still page rather than a wrong one:
 frames must be 8-bit images in a device or ICCBased colour space, and an
