@@ -29,7 +29,9 @@
 #include "pps-document-images.h"
 #include "pps-document-layers.h"
 #include "pps-document-links.h"
+#include "pps-document-animations.h"
 #include "pps-document-media.h"
+#include "pps-pdf-animation.h"
 #include "pps-document-misc.h"
 #include "pps-document-print.h"
 #include "pps-document-security.h"
@@ -87,6 +89,15 @@ struct _PdfDocument {
 	gboolean missing_fonts;
 
 	PdfPrintContext *print_ctx;
+
+	/* animate-package animations, read straight from the file with
+	 * poppler's core classes. Built on first use and NULL for the
+	 * overwhelming majority of documents, which have none; @animations_read
+	 * says the search has already been done. */
+	gchar *filename;
+	PpsPdfAnimations *animations;
+	gboolean animations_read;
+	GMutex animations_mutex;
 };
 
 static void pdf_document_security_iface_init (PpsDocumentSecurityInterface *iface);
@@ -99,6 +110,7 @@ static void pdf_document_document_print_iface_init (PpsDocumentPrintInterface *i
 static void pdf_document_document_annotations_iface_init (PpsDocumentAnnotationsInterface *iface);
 static void pdf_document_document_attachments_iface_init (PpsDocumentAttachmentsInterface *iface);
 static void pdf_document_document_media_iface_init (PpsDocumentMediaInterface *iface);
+static void pdf_document_document_animations_iface_init (PpsDocumentAnimationsInterface *iface);
 static void pdf_document_document_signatures_iface_init (PpsDocumentSignaturesInterface *iface);
 static void pdf_document_find_iface_init (PpsDocumentFindInterface *iface);
 static void pdf_document_file_exporter_iface_init (PpsFileExporterInterface *iface);
@@ -161,6 +173,8 @@ G_DEFINE_TYPE_WITH_CODE (PdfDocument,
                                                                                 pdf_document_document_attachments_iface_init)
                                                              G_IMPLEMENT_INTERFACE (PPS_TYPE_DOCUMENT_MEDIA,
                                                                                     pdf_document_document_media_iface_init)
+                                                             G_IMPLEMENT_INTERFACE (PPS_TYPE_DOCUMENT_ANIMATIONS,
+                                                                                    pdf_document_document_animations_iface_init)
                                                                  G_IMPLEMENT_INTERFACE (PPS_TYPE_DOCUMENT_SIGNATURES,
                                                                                         pdf_document_document_signatures_iface_init)
                                                                      G_IMPLEMENT_INTERFACE (PPS_TYPE_DOCUMENT_FIND,
@@ -182,6 +196,9 @@ pdf_document_dispose (GObject *object)
 	g_clear_pointer (&self->print_ctx, pdf_print_context_free);
 	g_clear_object (&self->document);
 	g_clear_pointer (&self->fonts_iter, poppler_fonts_iter_free);
+	g_clear_pointer (&self->animations, pps_pdf_animations_free);
+	g_clear_pointer (&self->filename, g_free);
+	g_mutex_clear (&self->animations_mutex);
 	g_rw_lock_clear (&self->rwlock);
 
 	G_OBJECT_CLASS (pdf_document_parent_class)->dispose (object);
@@ -192,6 +209,7 @@ pdf_document_init (PdfDocument *self)
 {
 	self->password = NULL;
 	g_rw_lock_init (&self->rwlock);
+	g_mutex_init (&self->animations_mutex);
 }
 
 static void
@@ -294,6 +312,8 @@ pdf_document_load (PpsDocument *document,
 	g_rw_lock_writer_lock (&self->rwlock);
 	self->document =
 	    poppler_document_new_from_file (uri, self->password, &poppler_error);
+	g_clear_pointer (&self->filename, g_free);
+	self->filename = g_filename_from_uri (uri, NULL, NULL);
 	g_rw_lock_writer_unlock (&self->rwlock);
 
 	if (self->document == NULL) {
@@ -4148,6 +4168,97 @@ pdf_document_media_get_media_mapping (PpsDocumentMedia *document_media,
 	g_rw_lock_reader_unlock (&self->rwlock);
 
 	return mapping_list_result;
+}
+
+/* Animations (the LaTeX animate package) */
+
+/* Reading the structure means opening the file a second time, so it happens
+ * once and only when something actually asks. */
+static PpsPdfAnimations *
+pdf_document_get_animations (PdfDocument *self)
+{
+	if (!self->animations_read) {
+		const gchar *uri = pps_document_get_uri (PPS_DOCUMENT (self));
+		g_autofree gchar *from_uri = uri ? g_filename_from_uri (uri, NULL, NULL) : NULL;
+		const gchar *filename = self->filename ? self->filename : from_uri;
+
+		self->animations_read = TRUE;
+
+		if (filename)
+			self->animations = pps_pdf_animations_new (filename, self->password);
+
+	}
+
+	return self->animations;
+}
+
+static PpsMappingList *
+pdf_document_animations_get_animation_mapping (PpsDocumentAnimations *document_animations,
+                                               PpsPage *page)
+{
+	PdfDocument *self = PDF_DOCUMENT (document_animations);
+	PpsPdfAnimations *animations;
+	const GPtrArray *found;
+	GList *retval = NULL;
+
+	g_mutex_lock (&self->animations_mutex);
+	animations = pdf_document_get_animations (self);
+	found = animations ? pps_pdf_animations_for_page (animations, page->index) : NULL;
+	g_mutex_unlock (&self->animations_mutex);
+
+	if (!found)
+		return NULL;
+
+	for (guint i = 0; i < found->len; i++) {
+		const PpsPdfAnimation *animation = g_ptr_array_index (found, i);
+		PpsMapping *mapping = g_new0 (PpsMapping, 1);
+
+		mapping->area.x1 = animation->x1;
+		mapping->area.y1 = animation->y1;
+		mapping->area.x2 = animation->x2;
+		mapping->area.y2 = animation->y2;
+		mapping->data = pps_animation_new (animation->page,
+		                                   animation->n_frames,
+		                                   animation->fps,
+		                                   (gpointer) animation);
+
+		retval = g_list_prepend (retval, mapping);
+	}
+
+	return pps_mapping_list_new (page->index, g_list_reverse (retval),
+	                             (GDestroyNotify) g_object_unref);
+}
+
+static cairo_surface_t *
+pdf_document_animations_render_frame (PpsDocumentAnimations *document_animations,
+                                      PpsAnimation *animation,
+                                      guint frame,
+                                      gdouble scale)
+{
+	PdfDocument *self = PDF_DOCUMENT (document_animations);
+	const PpsPdfAnimation *backend_data = pps_animation_get_backend_data (animation);
+	cairo_surface_t *surface;
+
+	if (!backend_data)
+		return NULL;
+
+	/* Its own lock, not the document's: the animations hold a separate
+	 * handle on the file, so they have nothing to serialise against the
+	 * PopplerDocument - and taking the document's writer lock here would
+	 * park the main thread behind whatever page render is in flight. */
+	g_mutex_lock (&self->animations_mutex);
+	surface = pps_pdf_animations_render_frame (pdf_document_get_animations (self),
+	                                           backend_data, frame, scale);
+	g_mutex_unlock (&self->animations_mutex);
+
+	return surface;
+}
+
+static void
+pdf_document_document_animations_iface_init (PpsDocumentAnimationsInterface *iface)
+{
+	iface->get_animation_mapping = pdf_document_animations_get_animation_mapping;
+	iface->render_frame = pdf_document_animations_render_frame;
 }
 
 static void

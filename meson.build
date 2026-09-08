@@ -1,10 +1,14 @@
+# C++ as well as C: the PDF backend's animate-package support uses poppler's
+# core classes, which are C++.
 project(
-  'papers', ['c'],
+  'papers', ['c', 'cpp'],
   version: '50.2',
   license: 'GPL-2.0-or-later',
   meson_version: '>= 1.8.0',
   default_options: [
     'buildtype=debugoptimized',
+    # poppler's core headers are C++20.
+    'cpp_std=c++20',
   ]
 )
 

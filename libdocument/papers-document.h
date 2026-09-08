@@ -23,6 +23,7 @@
 #include <libdocument/pps-document-info.h>
 #include <libdocument/pps-document-layers.h>
 #include <libdocument/pps-document-links.h>
+#include <libdocument/pps-document-animations.h>
 #include <libdocument/pps-document-media.h>
 #include <libdocument/pps-document-misc.h>
 #include <libdocument/pps-document-print.h>
@@ -43,6 +44,7 @@
 #include <libdocument/pps-link.h>
 #include <libdocument/pps-macros.h>
 #include <libdocument/pps-mapping-list.h>
+#include <libdocument/pps-animation.h>
 #include <libdocument/pps-media.h>
 #include <libdocument/pps-outlines.h>
 #include <libdocument/pps-page.h>

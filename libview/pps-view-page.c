@@ -57,6 +57,16 @@ typedef struct
 	gint cursor_page;
 	gint cursor_offset;
 	PpsAnnotationLayer *layers[LAYER_COUNT];
+
+	/* animate-package animations on this page, and the frame each is
+	 * showing. The textures are rendered on demand and kept for the scale
+	 * they were rendered at; a zoom throws them away. */
+	PpsMappingList *animations;
+	GHashTable *animation_frames; /* PpsAnimation -> GdkTexture */
+	guint animation_index;
+	gdouble animation_scale;
+	gint64 animation_last_frame_us;
+	guint animation_tick_id;
 } PpsViewPagePrivate;
 
 G_DEFINE_TYPE_WITH_CODE (PpsViewPage, pps_view_page, GTK_TYPE_WIDGET, G_ADD_PRIVATE (PpsViewPage) G_IMPLEMENT_INTERFACE (GTK_TYPE_ACCESSIBLE_TEXT, pps_view_page_accessible_text_init))
@@ -135,6 +145,230 @@ pps_view_page_measure (GtkWidget *widget,
 	} else {
 		*minimum = 0;
 		*natural = height;
+	}
+}
+
+/* --- Animations (the LaTeX animate package) -------------------------------
+ *
+ * The document hands back a frame sequence and a rate; the work here is
+ * showing the right frame at the right time, over the page it belongs to.
+ * Frames are rendered lazily and kept for the scale they were rendered at,
+ * because a zoom invalidates them all anyway.
+ */
+
+static void animation_stop (PpsViewPage *page);
+static void animation_start (PpsViewPage *page);
+static void doc_rect_to_view_rect (PpsViewPage *page,
+                                   const PpsRectangle *doc_rect,
+                                   GdkRectangle *view_rect);
+
+static void
+animation_clear_frames (PpsViewPage *page)
+{
+	PpsViewPagePrivate *priv = GET_PRIVATE (page);
+
+	if (priv->animation_frames)
+		g_hash_table_remove_all (priv->animation_frames);
+}
+
+/* Reload the animation list for the current page. */
+static void
+animation_reload (PpsViewPage *page)
+{
+	PpsViewPagePrivate *priv = GET_PRIVATE (page);
+	PpsDocument *document;
+	PpsPage *doc_page;
+
+	animation_stop (page);
+	animation_clear_frames (page);
+	g_clear_pointer (&priv->animations, pps_mapping_list_unref);
+	priv->animation_index = 0;
+
+	if (!priv->model || priv->index < 0)
+		return;
+
+	document = pps_document_model_get_document (priv->model);
+
+	if (!PPS_IS_DOCUMENT_ANIMATIONS (document))
+		return;
+
+	doc_page = pps_document_get_page (document, priv->index);
+	if (!doc_page)
+		return;
+
+	priv->animations = pps_document_animations_get_animation_mapping (PPS_DOCUMENT_ANIMATIONS (document),
+	                                                                  doc_page);
+	g_object_unref (doc_page);
+
+	if (priv->animations)
+		animation_start (page);
+}
+
+/* The rate to advance at: the fastest animation on the page, so every one of
+ * them runs no slower than the document asked for. */
+static gdouble
+animation_fps (PpsViewPage *page)
+{
+	PpsViewPagePrivate *priv = GET_PRIVATE (page);
+	gdouble fps = 1.;
+
+	for (GList *l = pps_mapping_list_get_list (priv->animations); l; l = l->next) {
+		PpsMapping *mapping = l->data;
+
+		fps = MAX (fps, pps_animation_get_fps (PPS_ANIMATION (mapping->data)));
+	}
+
+	return CLAMP (fps, 1., 60.);
+}
+
+static gboolean
+animation_tick (GtkWidget *widget, GdkFrameClock *clock, gpointer data)
+{
+	PpsViewPage *page = PPS_VIEW_PAGE (widget);
+	PpsViewPagePrivate *priv = GET_PRIVATE (page);
+	gint64 now = gdk_frame_clock_get_frame_time (clock);
+	gint64 interval;
+
+	if (!priv->animations) {
+		priv->animation_tick_id = 0;
+		return G_SOURCE_REMOVE;
+	}
+
+	interval = (gint64) (G_USEC_PER_SEC / animation_fps (page));
+
+	if (now - priv->animation_last_frame_us < interval)
+		return G_SOURCE_CONTINUE;
+
+	priv->animation_last_frame_us = now;
+	priv->animation_index++;
+
+	gtk_widget_queue_draw (widget);
+
+	return G_SOURCE_CONTINUE;
+}
+
+static void
+animation_start (PpsViewPage *page)
+{
+	PpsViewPagePrivate *priv = GET_PRIVATE (page);
+
+	if (priv->animation_tick_id != 0 || !priv->animations)
+		return;
+
+	/* Tick callbacks only run while the widget is mapped, so an animation
+	 * on a page scrolled out of view costs nothing. */
+	priv->animation_tick_id = gtk_widget_add_tick_callback (GTK_WIDGET (page),
+	                                                        animation_tick, NULL, NULL);
+}
+
+static void
+animation_stop (PpsViewPage *page)
+{
+	PpsViewPagePrivate *priv = GET_PRIVATE (page);
+
+	if (priv->animation_tick_id == 0)
+		return;
+
+	gtk_widget_remove_tick_callback (GTK_WIDGET (page), priv->animation_tick_id);
+	priv->animation_tick_id = 0;
+}
+
+/* How much a page may spend holding decoded frames. Past this the frames are
+ * decoded as they are shown and dropped again, which costs time on every loop
+ * but keeps a zoomed-in animation from eating hundreds of megabytes. */
+#define ANIMATION_CACHE_MAX_BYTES (48 * 1024 * 1024)
+
+/* The texture for an animation's current frame, decoded if it is not already
+ * in hand. This runs on the main thread rather than through a job: a frame is
+ * one scaled image, and waiting for a job would drop frames every loop.
+ */
+static GdkTexture *
+animation_frame_texture (PpsViewPage *page, PpsAnimation *animation, gdouble scale)
+{
+	PpsViewPagePrivate *priv = GET_PRIVATE (page);
+	PpsDocument *document = pps_document_model_get_document (priv->model);
+	guint n_frames = pps_animation_get_n_frames (animation);
+	GPtrArray *frames;
+	guint frame;
+	cairo_surface_t *surface;
+	GdkTexture *texture;
+
+	if (n_frames == 0)
+		return NULL;
+
+	frame = priv->animation_index % n_frames;
+
+	/* One slot per frame, filled as each is first shown: an animation is a
+	 * short loop, so after one pass it plays from memory. */
+	frames = g_hash_table_lookup (priv->animation_frames, animation);
+
+	if (!frames) {
+		frames = g_ptr_array_new_full (n_frames, g_object_unref);
+		g_ptr_array_set_size (frames, n_frames);
+		g_hash_table_insert (priv->animation_frames, animation, frames);
+	}
+
+	texture = g_ptr_array_index (frames, frame);
+	if (texture)
+		return texture;
+
+	surface = pps_document_animations_render_frame (PPS_DOCUMENT_ANIMATIONS (document),
+	                                                animation, frame, scale);
+
+	if (!surface)
+		return NULL;
+
+	texture = pps_document_misc_texture_from_surface (surface);
+	cairo_surface_destroy (surface);
+
+	if (!texture)
+		return NULL;
+
+	/* Kept only while the whole loop fits the budget; past that this frame
+	 * is handed back and forgotten, so the next pass decodes it again. */
+	if ((gsize) gdk_texture_get_width (texture) * gdk_texture_get_height (texture) * 4 * n_frames <=
+	    ANIMATION_CACHE_MAX_BYTES) {
+		g_ptr_array_index (frames, frame) = texture;
+	} else {
+		g_object_set_data_full (G_OBJECT (page), "pps-animation-transient",
+		                        texture, g_object_unref);
+	}
+
+	return texture;
+}
+
+static void
+animation_snapshot (PpsViewPage *page, GtkSnapshot *snapshot)
+{
+	PpsViewPagePrivate *priv = GET_PRIVATE (page);
+	gdouble scale;
+
+	if (!priv->animations)
+		return;
+
+	scale = pps_document_model_get_scale (priv->model);
+
+	/* A zoom makes every rendered frame the wrong size. */
+	if (scale != priv->animation_scale) {
+		priv->animation_scale = scale;
+		animation_clear_frames (page);
+	}
+
+	for (GList *l = pps_mapping_list_get_list (priv->animations); l; l = l->next) {
+		PpsMapping *mapping = l->data;
+		PpsAnimation *animation = PPS_ANIMATION (mapping->data);
+		GdkRectangle view_rect;
+		GdkTexture *texture;
+
+		texture = animation_frame_texture (page, animation, scale);
+		if (!texture)
+			continue;
+
+		doc_rect_to_view_rect (page, &mapping->area, &view_rect);
+
+		gtk_snapshot_append_texture (snapshot, texture,
+		                             &GRAPHENE_RECT_INIT (view_rect.x, view_rect.y,
+		                                                  view_rect.width, view_rect.height));
 	}
 }
 
@@ -605,6 +839,10 @@ pps_view_page_snapshot (GtkWidget *widget, GtkSnapshot *snapshot)
 			draw_selection_region (snapshot, region, &color);
 		}
 	}
+
+	/* Over the page, under the search highlights: an animation is part of
+	 * the page's content, not an overlay on top of everything. */
+	animation_snapshot (page, snapshot);
 
 	if (priv->search_context != NULL && pps_search_context_get_active (priv->search_context))
 		highlight_find_results (snapshot, page);
@@ -1376,7 +1614,11 @@ pps_view_page_accessible_text_init (GtkAccessibleTextInterface *iface)
 static void
 pps_view_page_init (PpsViewPage *page)
 {
+	PpsViewPagePrivate *priv = GET_PRIVATE (page);
 	GtkGesture *annot_drag;
+
+	priv->animation_frames = g_hash_table_new_full (g_direct_hash, g_direct_equal,
+	                                                NULL, (GDestroyNotify) g_ptr_array_unref);
 
 	annot_drag = gtk_gesture_drag_new ();
 	gtk_event_controller_set_propagation_phase (GTK_EVENT_CONTROLLER (annot_drag),
@@ -1412,6 +1654,10 @@ pps_view_page_dispose (GObject *object)
 		g_signal_handlers_disconnect_by_data (priv->search_context, page);
 	if (priv->annots_context != NULL)
 		g_signal_handlers_disconnect_by_data (priv->annots_context, page);
+
+	animation_stop (page);
+	g_clear_pointer (&priv->animations, pps_mapping_list_unref);
+	g_clear_pointer (&priv->animation_frames, g_hash_table_unref);
 
 	g_clear_object (&priv->model);
 	g_clear_object (&priv->pixbuf_cache);
@@ -1590,6 +1836,7 @@ pps_view_page_set_page (PpsViewPage *page, gint index)
 
 	g_object_notify_by_pspec (G_OBJECT (page), properties[PROP_PAGE]);
 
+	animation_reload (page);
 	display_annotation_layers (page);
 
 	gtk_widget_queue_resize (GTK_WIDGET (page));
