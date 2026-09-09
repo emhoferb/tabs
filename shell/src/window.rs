@@ -633,6 +633,37 @@ mod imp {
                         }
                     ))
                     .build(),
+                // Ctrl+1..8 pick that tab, Ctrl+9 the last one, as browsers
+                // do - and as Alt+1..9 already does through libadwaita's own
+                // tab shortcuts, which stay as they are. -1 means "the last".
+                gio::ActionEntryBuilder::new("select-tab")
+                    .parameter_type(Some(glib::VariantTy::INT32))
+                    .activate(glib::clone!(
+                        #[weak(rename_to = obj)]
+                        self,
+                        move |_, _, position| {
+                            let Some(position) = position.and_then(|p| p.get::<i32>()) else {
+                                return;
+                            };
+                            let n_pages = obj.tab_view.n_pages();
+
+                            let index = if position < 0 {
+                                n_pages - 1
+                            } else {
+                                position - 1
+                            };
+
+                            // Asking for a tab that is not there does nothing,
+                            // rather than clamping to a neighbour: pressing
+                            // Ctrl+5 with three tabs open means nothing.
+                            if index < 0 || index >= n_pages {
+                                return;
+                            }
+
+                            obj.tab_view.set_selected_page(&obj.tab_view.nth_page(index));
+                        }
+                    ))
+                    .build(),
                 gio::ActionEntryBuilder::new("next-tab")
                     .activate(glib::clone!(
                         #[weak(rename_to = obj)]

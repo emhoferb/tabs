@@ -136,6 +136,62 @@ template $PpsWindow: Adw.ApplicationWindow {
     scope: global;
 
     Shortcut {
+      trigger: "<Ctrl>1";
+      action: "action(win.select-tab)";
+      arguments: "1";
+    }
+
+    Shortcut {
+      trigger: "<Ctrl>2";
+      action: "action(win.select-tab)";
+      arguments: "2";
+    }
+
+    Shortcut {
+      trigger: "<Ctrl>3";
+      action: "action(win.select-tab)";
+      arguments: "3";
+    }
+
+    Shortcut {
+      trigger: "<Ctrl>4";
+      action: "action(win.select-tab)";
+      arguments: "4";
+    }
+
+    Shortcut {
+      trigger: "<Ctrl>5";
+      action: "action(win.select-tab)";
+      arguments: "5";
+    }
+
+    Shortcut {
+      trigger: "<Ctrl>6";
+      action: "action(win.select-tab)";
+      arguments: "6";
+    }
+
+    Shortcut {
+      trigger: "<Ctrl>7";
+      action: "action(win.select-tab)";
+      arguments: "7";
+    }
+
+    Shortcut {
+      trigger: "<Ctrl>8";
+      action: "action(win.select-tab)";
+      arguments: "8";
+    }
+
+    /* Ctrl+9 is the last tab however many there are, the convention
+     * every browser uses. Ctrl+0 is not free here - it is zoom 100%. */
+    Shortcut {
+      trigger: "<Ctrl>9";
+      action: "action(win.select-tab)";
+      arguments: "-1";
+    }
+
+    Shortcut {
       trigger: "<Ctrl>Tab|<Ctrl>Page_Down";
       action: "action(win.next-tab)";
     }
