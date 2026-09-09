@@ -132,7 +132,8 @@ mod imp {
         #[template_callback]
         fn focused_out(&self) {
             if let Some(model) = self.model() {
-                self.set_current_page(model.page());
+                self.sync_entry_to_page(model.page());
+                self.update_pages_label(model.page());
             }
 
             EntryExt::set_alignment(&self.entry.get(), 0.9);
@@ -202,16 +203,31 @@ mod imp {
 
         fn set_current_page(&self, page: i32) {
             if page >= 0 {
-                if let Some(document) = self.document() {
-                    let page_label = document.page_label(page);
-
-                    self.entry.set_text(&page_label.unwrap_or_default());
-                    self.entry.set_position(-1);
-                } else {
-                    self.entry.set_text("");
+                // Never while the entry has the focus: the user is typing a
+                // page number into it, and the page changes that arrive just
+                // after a document opens - the restore of the remembered
+                // page, the first render - would replace the digits they had
+                // half-entered. Pressing Enter then went to whatever had been
+                // written over them rather than the page they asked for.
+                if !self.entry.has_focus() {
+                    self.sync_entry_to_page(page);
                 }
 
                 self.update_pages_label(page);
+            }
+        }
+
+        /// Put the page's own label in the entry, whatever it currently
+        /// holds. Used when focus leaves, where the half-typed number the
+        /// guard above protects is being abandoned rather than committed.
+        fn sync_entry_to_page(&self, page: i32) {
+            if let Some(document) = self.document() {
+                let page_label = document.page_label(page);
+
+                self.entry.set_text(&page_label.unwrap_or_default());
+                self.entry.set_position(-1);
+            } else {
+                self.entry.set_text("");
             }
         }
 

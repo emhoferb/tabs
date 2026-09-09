@@ -16,7 +16,10 @@ extern "C" {
 
 /// Accent choices, in the order they appear in the combo row. The first two are
 /// the special sources; the rest name a fixed colour.
-const ACCENTS: [&str; 12] = [
+/// No plain "blue": it resolves to the same colour as "upstream", so listing
+/// both offered the same thing twice. A stored "blue" still works - only the
+/// duplicate entry in this list is gone.
+const ACCENTS: [&str; 11] = [
     "system",
     "upstream",
     "orange",
@@ -25,7 +28,6 @@ const ACCENTS: [&str; 12] = [
     "olive",
     "viridian",
     "prussiangreen",
-    "blue",
     "purple",
     "magenta",
     "red",
