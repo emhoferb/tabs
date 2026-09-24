@@ -16,15 +16,14 @@
  *
  * None of it is reachable through poppler-glib - form field icons are not
  * part of that API - so this uses poppler's core classes and opens its own
- * handle on the file. That handle is only touched from the thread that
- * created it, which for rendering means a job thread.
+ * handle on the file. Nothing else touches that handle, and the PDF backend
+ * takes a lock of its own around every call into it.
  */
 
 #include "pps-pdf-animation.h"
 
 #include <algorithm>
 #include <cmath>
-#include <cstdlib>
 #include <memory>
 #include <string>
 #include <utility>
@@ -47,6 +46,11 @@
 /* The animate package's own default, used when the frame rate cannot be read
  * back out of the document's JavaScript. */
 #define DEFAULT_FPS 12.
+
+/* The longest side a frame is decoded at. Past it the view stretches the
+ * frame instead, which loses nothing: a frame is a raster image, and at that
+ * size it is already being magnified. */
+#define MAX_FRAME_SIZE 4096.
 
 struct _PpsPdfAnimations {
 	std::unique_ptr<PDFDoc> doc;
@@ -87,18 +91,32 @@ field_name (FormField *field)
 	return name ? std::string (name->c_str ()) : std::string ();
 }
 
+/* A field name's number. Digits only - no sign, no spaces - and it has to fit
+ * an int: names are whatever the file says, and atoi() on a long run of
+ * digits is undefined. */
+static bool
+parse_index (const std::string &digits, int *out)
+{
+	guint64 value;
+
+	if (!g_ascii_string_to_unsigned (digits.c_str (), 10, 0, G_MAXINT, &value, nullptr))
+		return false;
+
+	*out = (int) value;
+
+	return true;
+}
+
 /* "anm4" -> 4, or -1. */
 static int
 animation_index_of (const std::string &name)
 {
-	if (name.compare (0, 3, "anm") != 0 || name.size () <= 3)
+	int index;
+
+	if (name.compare (0, 3, "anm") != 0 || !parse_index (name.substr (3), &index))
 		return -1;
 
-	for (size_t i = 3; i < name.size (); i++)
-		if (!g_ascii_isdigit (name[i]))
-			return -1;
-
-	return atoi (name.c_str () + 3);
+	return index;
 }
 
 /* "4.7" -> (4, 7), or false. */
@@ -107,17 +125,11 @@ frame_index_of (const std::string &name, int *animation, int *frame)
 {
 	size_t dot = name.find ('.');
 
-	if (dot == std::string::npos || dot == 0 || dot + 1 >= name.size ())
+	if (dot == std::string::npos)
 		return false;
 
-	for (size_t i = 0; i < name.size (); i++)
-		if (i != dot && !g_ascii_isdigit (name[i]))
-			return false;
-
-	*animation = atoi (name.substr (0, dot).c_str ());
-	*frame = atoi (name.substr (dot + 1).c_str ());
-
-	return true;
+	return parse_index (name.substr (0, dot), animation) &&
+	       parse_index (name.substr (dot + 1), frame);
 }
 
 /* A field's icon: the /MK /I entry of its widget's annotation dictionary,
@@ -401,7 +413,7 @@ pps_pdf_animations_for_page (PpsPdfAnimations *self, guint page)
  * "q <scale> cm q <size> cm /Im1 Do Q Q" - so the image in the appearance
  * stream's resources is the frame. Anything more elaborate than that (vector
  * drawing, several images) is left alone: better a still page than a wrong
- * one, and the caller drops the animation when this returns nothing.
+ * one, and when this returns nothing the page shows as it would unanimated.
  */
 static Object
 frame_image (const Object &icon)
@@ -542,7 +554,11 @@ decode_image (const Object &image, int *width, int *height, std::vector<unsigned
 	*width = w.getInt ();
 	*height = h.getInt ();
 
-	if (*width <= 0 || *height <= 0 || (gint64) *width * *height > 64 * 1024 * 1024)
+	/* 32767 a side is as large as a cairo surface goes. Refusing past it
+	 * here, before decoding, matters: a frame that fails is asked for
+	 * again on every tick of the animation. */
+	if (*width <= 0 || *height <= 0 || *width > 32767 || *height > 32767 ||
+	    (gint64) *width * *height > 64 * 1024 * 1024)
 		return false;
 
 	FrameSpace space = resolve_space (cs);
@@ -648,6 +664,19 @@ pps_pdf_animations_render_frame (PpsPdfAnimations *self,
 	if (index >= self->animations.size () || frame >= self->frames[index].size ())
 		return nullptr;
 
+	/* The rectangle is as the file gave it, so check it before it becomes
+	 * a size in pixels. */
+	double target_width = (animation->x2 - animation->x1) * scale;
+	double target_height = (animation->y2 - animation->y1) * scale;
+
+	if (!std::isfinite (target_width) || !std::isfinite (target_height) ||
+	    target_width <= 0. || target_height <= 0.)
+		return nullptr;
+
+	double fit = MIN (1., MAX_FRAME_SIZE / MAX (target_width, target_height));
+	int out_width = (int) ceil (target_width * fit);
+	int out_height = (int) ceil (target_height * fit);
+
 	int width, height;
 	std::vector<unsigned char> rgb;
 	Object image = frame_image (self->frames[index][frame]);
@@ -657,8 +686,15 @@ pps_pdf_animations_render_frame (PpsPdfAnimations *self,
 
 	std::vector<unsigned char> alpha = decode_smask (image, width, height);
 
-	/* cairo wants premultiplied BGRA in native byte order. */
+	/* cairo wants premultiplied BGRA in native byte order. A surface that
+	 * failed - out of memory, say - has no pixels to write to. */
 	cairo_surface_t *decoded = cairo_image_surface_create (CAIRO_FORMAT_ARGB32, width, height);
+
+	if (cairo_surface_status (decoded) != CAIRO_STATUS_SUCCESS) {
+		cairo_surface_destroy (decoded);
+		return nullptr;
+	}
+
 	unsigned char *data = cairo_image_surface_get_data (decoded);
 	int stride = cairo_image_surface_get_stride (decoded);
 
@@ -680,16 +716,15 @@ pps_pdf_animations_render_frame (PpsPdfAnimations *self,
 
 	cairo_surface_mark_dirty (decoded);
 
-	int out_width = (int) ceil ((animation->x2 - animation->x1) * scale);
-	int out_height = (int) ceil ((animation->y2 - animation->y1) * scale);
+	cairo_surface_t *surface = cairo_image_surface_create (CAIRO_FORMAT_ARGB32,
+	                                                       out_width, out_height);
 
-	if (out_width <= 0 || out_height <= 0) {
+	if (cairo_surface_status (surface) != CAIRO_STATUS_SUCCESS) {
+		cairo_surface_destroy (surface);
 		cairo_surface_destroy (decoded);
 		return nullptr;
 	}
 
-	cairo_surface_t *surface = cairo_image_surface_create (CAIRO_FORMAT_ARGB32,
-	                                                       out_width, out_height);
 	cairo_t *cr = cairo_create (surface);
 
 	cairo_scale (cr, (double) out_width / width, (double) out_height / height);
