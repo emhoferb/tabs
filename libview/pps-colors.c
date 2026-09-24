@@ -95,12 +95,85 @@ read_desktop_gtk_theme (void)
 	return theme;
 }
 
+/* The theme name as last read. The accent is resolved while drawing - every
+ * selection, every search result - so the name is read once and then kept
+ * current by the portal's change signal, rather than asked for over D-Bus on
+ * each draw. */
+static char *desktop_gtk_theme = NULL;
+
+static void
+desktop_setting_changed_cb (GDBusConnection *bus,
+			    const char *sender_name,
+			    const char *object_path,
+			    const char *interface_name,
+			    const char *signal_name,
+			    GVariant *parameters,
+			    gpointer user_data)
+{
+	const char *namespace, *key;
+	g_autoptr (GVariant) value = NULL;
+
+	if (!g_variant_is_of_type (parameters, G_VARIANT_TYPE ("(ssv)")))
+		return;
+
+	g_variant_get (parameters, "(&s&sv)", &namespace, &key, &value);
+
+	if (g_strcmp0 (namespace, "org.gnome.desktop.interface") != 0 ||
+	    g_strcmp0 (key, "gtk-theme") != 0)
+		return;
+
+	g_free (desktop_gtk_theme);
+	desktop_gtk_theme = g_variant_is_of_type (value, G_VARIANT_TYPE_STRING)
+				? g_variant_dup_string (value, NULL)
+				: NULL;
+
+	pps_accent_color_refresh ();
+}
+
+static const char *
+desktop_gtk_theme_name (void)
+{
+	static gsize done = 0;
+
+	if (g_once_init_enter (&done)) {
+		/* Deliberately leaked: the subscription lives on it. */
+		GDBusConnection *bus = g_bus_get_sync (G_BUS_TYPE_SESSION, NULL, NULL);
+
+		desktop_gtk_theme = read_desktop_gtk_theme ();
+
+		if (bus)
+			g_dbus_connection_signal_subscribe (bus,
+							    "org.freedesktop.portal.Desktop",
+							    "org.freedesktop.portal.Settings",
+							    "SettingChanged",
+							    "/org/freedesktop/portal/desktop",
+							    NULL,
+							    G_DBUS_SIGNAL_FLAGS_NONE,
+							    desktop_setting_changed_cb,
+							    NULL, NULL);
+
+		g_once_init_leave (&done, 1);
+	}
+
+	return desktop_gtk_theme;
+}
+
 static gboolean
 accent_from_theme_name (AdwAccentColor *out)
 {
-	g_autofree char *theme = read_desktop_gtk_theme ();
+	return accent_from_theme_string (desktop_gtk_theme_name (), out);
+}
 
-	return accent_from_theme_string (theme, out);
+/* One instance, kept for good: resolving the accent reads it on every draw. */
+static GSettings *
+papers_settings (void)
+{
+	static GSettings *settings = NULL;
+
+	if (!settings)
+		settings = g_settings_new ("org.gnome.Papers");
+
+	return settings;
 }
 
 /* Named accents the user can pick explicitly, matching the Ubuntu palette. */
@@ -128,8 +201,7 @@ resolve_accent (AdwAccentColor *out, gboolean *overridden)
 	AdwStyleManager *style_manager = adw_style_manager_get_default ();
 	AdwAccentColor accent = adw_style_manager_get_accent_color (style_manager);
 	AdwAccentColor from_theme;
-	g_autoptr (GSettings) settings = g_settings_new ("org.gnome.Papers");
-	g_autofree char *source = g_settings_get_string (settings, "accent-source");
+	g_autofree char *source = g_settings_get_string (papers_settings (), "accent-source");
 
 	/* An explicit choice wins over everything. */
 	if (source && g_strcmp0 (source, "system") != 0) {
@@ -216,12 +288,9 @@ ensure_accent_css (void)
 	static gsize done = 0;
 
 	if (g_once_init_enter (&done)) {
-		g_autoptr (GSettings) settings = g_settings_new ("org.gnome.Papers");
-
 		pps_accent_color_refresh ();
 
-		/* Deliberately leaked: it must outlive every view. */
-		g_signal_connect (g_object_ref (settings), "changed::accent-source",
+		g_signal_connect (papers_settings (), "changed::accent-source",
 				  G_CALLBACK (pps_accent_color_refresh), NULL);
 
 		g_once_init_leave (&done, 1);
