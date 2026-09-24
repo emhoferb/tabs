@@ -22,8 +22,7 @@
         "--filesystem=/media:ro",
         "--filesystem=/run/media:ro",
         "--filesystem=xdg-run/gvfsd",
-        "--filesystem=xdg-run/gvfs",
-        "--env=G_DEBUG=fatal-criticals"
+        "--filesystem=xdg-run/gvfs"
     ],
     "build-options": {
         "append-path": "/usr/lib/sdk/rust-stable/bin:",
@@ -59,7 +58,7 @@
                 {
                     "type": "git",
                     "url": "https://gitlab.freedesktop.org/poppler/poppler-data.git",
-                    "branch": "master"
+                    "commit": "3d16b54346767f2e69c3dcd09d28d762d4a4add5"
                 }
             ]
         },
@@ -86,7 +85,7 @@
                 {
                     "type": "git",
                     "url": "https://gitlab.freedesktop.org/poppler/poppler.git",
-                    "branch": "master"
+                    "commit": "557c83abb9a118c4de2e7ad872aef9e66dbc952b"
                 }
             ]
         },

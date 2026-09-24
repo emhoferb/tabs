@@ -106,8 +106,10 @@ worth knowing:
   C caller gets a critical. Build models with `g_object_new(..., "annotation-model", …)`.
 - **`PpsDocumentView::new()` is broken upstream** — it sets `application` and
   `show-menubar`, which the widget does not have. Use `glib::Object::builder()`.
-- **`G_DEBUG=fatal-criticals` is set in the manifest**, so any critical aborts
-  the app. That is useful, but a "crash" is often just a warning.
+- **Test with `--env=G_DEBUG=fatal-criticals`** on `flatpak run`, so any
+  critical aborts the app. The manifest no longer sets it — a user's copy should
+  log a critical, not die of it — so without the flag a critical is one line on
+  stderr and easy to miss. With it, a "crash" is often just a warning.
 
 ## Conventions
 
