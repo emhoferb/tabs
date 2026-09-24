@@ -25,6 +25,10 @@ split `PpsDocumentView` out of the window, with 61 of 67 actions in a scoped
 | Close tab (closes the window if it is the last) | `Ctrl+W` |
 | Close window | `Ctrl+Shift+W` |
 | Next / previous tab | `Ctrl+Tab` / `Ctrl+Shift+Tab`, `Ctrl+PgDn` / `Ctrl+PgUp` |
+| Go to tab 1–8 / the last tab | `Ctrl+1`…`Ctrl+8` / `Ctrl+9` (`Alt+1`…`Alt+9` too) |
+
+Dragging a tab out of the tab bar opens it in a new window; dropping it on
+another window's tab bar moves it there, and a window left without tabs closes.
 
 Opening a document into a tab is seamless: the current document stays on screen
 while the new one loads behind a spinner on its own tab, which is revealed only
@@ -63,8 +67,10 @@ Width, Automatic, and presets from 50% to 400%.
 From the main menu. Contains:
 
 - **Highlight style** — coloured border (default) or filled
+- **Selected tab** — underlined (default), filled, or plain grey; independent
+  of the highlight style
 - **Accent colour** — follow the desktop, Papers' default blue, or any of the
-  ten Ubuntu accents
+  other nine Ubuntu accents (Ubuntu's blue is Papers' blue)
 - **Collapse sidebar in narrow windows** — off keeps the sidebar at all widths
 - **Floating controls** — the zoom and annotation buttons over the page
 - **Keep outline sections expanded**
@@ -91,7 +97,9 @@ and inverted along with it in night mode.
 
 Limits, both chosen to fail by showing a still page rather than a wrong one:
 frames must be 8-bit images in a device or ICCBased colour space, and an
-animation whose frame is anything but a single image is left alone.
+animation whose frame is anything but a single image is left alone. Frames
+are decoded at most 4096 pixels on a side; zoomed in further, the view
+stretches them instead.
 
 ### Two-finger and wheel page flipping
 
@@ -135,6 +143,11 @@ absurdly wide sidebar.
 
 `Ctrl+H`, or the main menu. Hides the zoom *and* annotation buttons, so the page
 is unobstructed. Applies to every tab and is remembered.
+
+### Its own icon
+
+The application icon is the fork's own logo rather than Papers', so the two can
+be told apart in the dock and the app grid.
 
 ---
 
@@ -258,7 +271,9 @@ process. Set *Open documents in a new tab* off to get windows back.
 portal — `org.freedesktop.appearance accent-color` does not exist before GNOME
 47. It selects an accent by swapping GTK theme variants (`Yaru-red-dark`), so the
 accent is read from the theme name via the settings portal, and only when
-libadwaita reports its default blue. A desktop that does publish an accent keeps
+libadwaita reports its default blue. The name is read once and then followed
+through the portal's change signal, since the accent is looked up on every
+draw of a selection or search result. A desktop that does publish an accent keeps
 precedence, so this resolves itself on a newer system.
 
 ---
@@ -272,6 +287,7 @@ All under `org.gnome.Papers`:
 | `sidebar-width` | 320 | Shared by all tabs; a ceiling, not a fixed width |
 | `sidebar-width-fraction` | 0.25 | Rate the sidebar narrows at once the window is too small for `sidebar-width` |
 | `highlight-style` | `outline` | `outline` or `fill` |
+| `tab-highlight-style` | `underline` | `underline`, `filled` or `default` (plain grey) |
 | `accent-source` | `system` | `system`, `upstream`, or a colour name |
 | `keep-outline-expanded` | true | Sections stay open once opened |
 | `open-in-new-tab` | true | Tabs rather than windows |
