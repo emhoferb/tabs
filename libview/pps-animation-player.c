@@ -5,6 +5,8 @@
 
 #include <config.h>
 
+#include <math.h>
+
 #include "pps-animation-player.h"
 #include "pps-document-misc.h"
 
@@ -17,6 +19,8 @@ struct _PpsAnimationPlayer {
 	/* Owns this player, and outlives it. */
 	GtkWidget *widget;
 
+	/* Referenced: the animations below point into data the document owns,
+	 * and it is also what makes comparing it in set_page() sound. */
 	PpsDocument *document;
 	gint page;
 
@@ -133,6 +137,7 @@ pps_animation_player_free (PpsAnimationPlayer *player)
 
 	g_clear_pointer (&player->animations, pps_mapping_list_unref);
 	g_clear_pointer (&player->frames, g_hash_table_unref);
+	g_clear_object (&player->document);
 	g_free (player);
 }
 
@@ -143,11 +148,17 @@ pps_animation_player_set_page (PpsAnimationPlayer *player,
 {
 	g_return_if_fail (player != NULL);
 
+	/* Presentation mode re-runs its page update on every redraw that finds
+	 * no render job in hand. Starting over each time would put the
+	 * animation back on frame zero, so it would stutter in place. */
+	if (player->document == document && player->page == page)
+		return;
+
 	stop (player);
 	clear_frames (player);
 	g_clear_pointer (&player->animations, pps_mapping_list_unref);
 
-	player->document = document;
+	g_set_object (&player->document, document);
 	player->page = page;
 	player->index = 0;
 
@@ -222,6 +233,17 @@ frame_texture (PpsAnimationPlayer *player, PpsAnimation *animation, gdouble scal
 	return texture;
 }
 
+/* The rectangle comes from the file, so it can be anything, and casting a
+ * double past G_MAXINT - or NaN - to gint is undefined. */
+static gint
+to_pixels (gdouble value)
+{
+	if (isnan (value))
+		return 0;
+
+	return (gint) CLAMP (value, -(gdouble) (G_MAXINT / 2), (gdouble) (G_MAXINT / 2));
+}
+
 /* Where a rectangle given in PDF points, top-left origin, lands inside the
  * page as it is drawn. */
 static void
@@ -260,10 +282,10 @@ map_rect (const PpsRectangle *doc_rect,
 		break;
 	}
 
-	out->x = (gint) (page_area->x + x);
-	out->y = (gint) (page_area->y + y);
-	out->width = (gint) ceil (width);
-	out->height = (gint) ceil (height);
+	out->x = to_pixels (page_area->x + x);
+	out->y = to_pixels (page_area->y + y);
+	out->width = to_pixels (ceil (width));
+	out->height = to_pixels (ceil (height));
 }
 
 void
