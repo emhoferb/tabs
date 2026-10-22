@@ -171,7 +171,7 @@ papers_settings (void)
 	static GSettings *settings = NULL;
 
 	if (!settings)
-		settings = g_settings_new ("org.gnome.Papers");
+		settings = g_settings_new ("io.github.emhoferb.Tabs");
 
 	return settings;
 }

@@ -280,7 +280,7 @@ precedence, so this resolves itself on a newer system.
 
 ## Settings
 
-All under `org.gnome.Papers`:
+All under `io.github.emhoferb.Tabs` (Papers itself uses `org.gnome.Papers`; the fork has its own, so the two never share settings):
 
 | Key | Default | Meaning |
 | --- | --- | --- |

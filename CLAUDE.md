@@ -19,15 +19,18 @@ Never build this natively: it needs GTK ≥ 4.17, libadwaita ≥ 1.8 and poppler
 
 ```bash
 flatpak-builder --user --install --force-clean --disable-rofiles-fuse \
-    _flatpak build-aux/flatpak/org.gnome.Papers.Local.json
-flatpak run --user org.gnome.Papers.Devel [file.pdf]
+    _flatpak build-aux/flatpak/io.github.emhoferb.Tabs.json
+flatpak run --user io.github.emhoferb.Tabs [file.pdf]
 ```
 
 A full rebuild takes several minutes; poppler/exempi/djvulibre are cached after
-the first one. The app id is `org.gnome.Papers.Devel`, not `.Local` — the
-manifest filename kept its old name. **The flatpak app-id must equal the
-application id compiled by the devel profile**, or single-instance registration
-is refused by the D-Bus proxy and every launch becomes its own process.
+the first one. The app is called **Tabs**: app id and settings schema
+`io.github.emhoferb.Tabs` (the manifest builds the default profile; `-Dprofile=devel`
+would append `.Devel`), installed command `tabspdf`. Internal names - the
+`papers` Cargo crate, `/org/gnome/papers` resource paths, the `pps` prefix, the
+`papers` gettext domain - are upstream's and stay. **The flatpak app-id must
+equal the application id compiled in**, or single-instance registration is
+refused by the D-Bus proxy and every launch becomes its own process.
 
 ## Architecture
 
@@ -88,7 +91,7 @@ worth knowing:
 ## Things that will bite you
 
 - **`pkill -f <pattern>`** matches Claude Code's own shell if the pattern
-  appears in its command line. Use `flatpak kill org.gnome.Papers.Devel`.
+  appears in its command line. Use `flatpak kill io.github.emhoferb.Tabs`.
 - **Blueprint emits event controllers as `<child>`.** `GtkBox` treats a child as
   a widget to pack and silently drops the controller; `GtkSeparator` does not.
   Safer: add controllers from Rust with `add_controller()`.

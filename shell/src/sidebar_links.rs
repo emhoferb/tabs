@@ -933,7 +933,7 @@ mod imp {
             // default they now stay open: having them snap shut again as soon
             // as the reader moves past makes the outline appear to rearrange
             // itself underneath the cursor.
-            if gio::Settings::new("org.gnome.Papers").boolean("keep-outline-expanded") {
+            if gio::Settings::new("io.github.emhoferb.Tabs").boolean("keep-outline-expanded") {
                 return;
             }
 

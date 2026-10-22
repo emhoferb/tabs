@@ -6,7 +6,7 @@ backends_common_cflags = [
 
 foreach backend, backend_mime_types: backends
   backend_name = backend + 'document'
-  backend_id = 'org.gnome.Papers.@0@Document'.format(backend.substring(0, 1).to_upper() + backend.substring(1))
+  backend_id = pps_namespace + '.@0@Document'.format(backend.substring(0, 1).to_upper() + backend.substring(1))
 
   # Set default values, let each backend configure its own
   backend_sources = []

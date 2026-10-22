@@ -105,7 +105,7 @@ mod imp {
                 shortcuts_group: Default::default(),
                 reset_shortcuts_button: Default::default(),
                 shortcut_labels: Default::default(),
-                settings: gio::Settings::new("org.gnome.Papers"),
+                settings: gio::Settings::new("io.github.emhoferb.Tabs"),
             }
         }
     }

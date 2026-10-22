@@ -1,4 +1,4 @@
-# <img src="data/icons/128x128/apps/org.gnome.Papers.Devel.png" width="48" alt=""> Papers with tabs
+# <img src="data/icons/128x128/apps/io.github.emhoferb.Tabs.png" width="48" alt=""> Tabs
 
 An unofficial fork of [GNOME Papers](https://gitlab.gnome.org/GNOME/papers)
 50.2, the GNOME document viewer. It adds tabs and brings back a handful of
@@ -34,17 +34,17 @@ poppler, and most distributions don't ship those yet.
 flatpak install flathub org.gnome.Sdk//50 org.gnome.Platform//50 \
     org.freedesktop.Sdk.Extension.rust-stable//25.08
 flatpak-builder --user --install --force-clean \
-    _flatpak build-aux/flatpak/org.gnome.Papers.Local.json
-flatpak run org.gnome.Papers.Devel [file.pdf]
+    _flatpak build-aux/flatpak/io.github.emhoferb.Tabs.json
+flatpak run io.github.emhoferb.Tabs [file.pdf]
 ```
 
 The first build takes a while because it compiles poppler; later builds reuse
 it. The build needs network access to fetch Rust crates. If FUSE is unavailable,
 add `--disable-rofiles-fuse`.
 
-It installs as `org.gnome.Papers.Devel`, alongside a regular Papers rather than
-replacing it. GNOME's own nightly Papers build uses the same ID, so you can't
-have both installed at once.
+It installs as `io.github.emhoferb.Tabs`, with its own settings, so it can sit beside
+a regular Papers without either affecting the other. Inside the sandbox the
+command is `tabspdf`.
 
 ## Sandbox permissions
 

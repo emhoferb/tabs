@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: GPL-2.0-or-later -->
+<!-- SPDX-FileCopyrightText: Copyright © 2014 Christian Persch -->
+<component type="desktop-application">
+  <id>@APP_ID@</id>
+  <launchable type="desktop-id">@APP_ID@.desktop</launchable>
+  <metadata_license>GPL-2.0+ or GFDL-1.3-only</metadata_license>
+  <project_license>GPL-2.0-or-later</project_license>
+  <name>Tabs</name>
+  <summary>Read documents side by side in tabs</summary>
+  <description>
+    <p>A document viewer with tabs, based on GNOME Papers. Open several documents in one window, pin a link's preview to read the cited page beside the text, and play the animations in slides made with LaTeX's animate package.</p>
+    <p>Tabs supports documents in: PDF, DjVu, TIFF, and Comic Books archives (CBR, CBT, CBZ, CB7).</p>
+    <p>Tabs is an unofficial fork of Papers and is not affiliated with or endorsed by the GNOME project.</p>
+  </description>
+  <requires>
+    <display_length compare="ge">360</display_length>
+  </requires>
+  <supports>
+    <control>keyboard</control>
+    <control>pointing</control>
+    <control>touch</control>
+  </supports>
+  <branding>
+    <color type="primary" scheme_preference="light">#f66151</color>
+    <color type="primary" scheme_preference="dark">#a51d2d</color>
+  </branding>
+  <url type="homepage">https://github.com/emhoferb/tabs</url>
+  <url type="bugtracker">https://github.com/emhoferb/tabs/issues</url>
+  <url type="vcs-browser">https://github.com/emhoferb/tabs</url>
+  <developer id="io.github.emhoferb">
+    <name>Bernhard Emhofer</name>
+  </developer>
+  <translation type="gettext">papers</translation>
+  <content_rating type="oars-1.1" />
+  <releases>
+    <release version="50.2" type="stable" date="2026-10-22">
+      <description>
+        <p>The first release of Tabs, based on Papers 50.2:</p>
+        <ul>
+          <li>Documents open as tabs, which can be dragged between windows</li>
+          <li>A link's preview can be pinned and read, scrolled and copied from</li>
+          <li>Slides made with the LaTeX animate package play their animations</li>
+          <li>Evince's compact outline, page flipping and zoom menu are back</li>
+          <li>Preferences for highlight and tab styles, accent colour and shortcuts</li>
+        </ul>
+      </description>
+    </release>
+  </releases>
+</component>

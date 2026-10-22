@@ -28,11 +28,11 @@ $PpsUndoContext undo_context {
 }
 
 Gio.Settings default_settings {
-  schema-id: "org.gnome.Papers.Default";
+  schema-id: "io.github.emhoferb.Tabs.Default";
 }
 
 Gio.Settings settings {
-  schema-id: "org.gnome.Papers";
+  schema-id: "io.github.emhoferb.Tabs";
   changed::override-restrictions => $doc_restrictions_changed() swapped;
   changed::page-cache-size => $page_cache_size_changed();
   changed::allow-links-change-zoom => $allow_links_change_zoom_changed();

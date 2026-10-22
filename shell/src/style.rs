@@ -20,7 +20,7 @@ fn settings() -> gio::Settings {
     // "changed" subscription - which is why a new highlight style only
     // showed up after a restart.
     thread_local! {
-        static SETTINGS: gio::Settings = gio::Settings::new("org.gnome.Papers");
+        static SETTINGS: gio::Settings = gio::Settings::new("io.github.emhoferb.Tabs");
     }
 
     SETTINGS.with(|s| s.clone())

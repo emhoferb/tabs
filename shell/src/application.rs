@@ -193,7 +193,7 @@ mod imp {
                 // Tabs are incompatible with that by construction, so the
                 // preference decides. Choosing tabs accepts that documents open
                 // together share a process.
-                let prefer_tab = gio::Settings::new("org.gnome.Papers").boolean("open-in-new-tab");
+                let prefer_tab = gio::Settings::new("io.github.emhoferb.Tabs").boolean("open-in-new-tab");
 
                 if prefer_tab {
                     if let Some(w) = obj
@@ -242,7 +242,7 @@ mod imp {
                 Some(&appstream_version),
             );
 
-            about.set_copyright(&gettext("© 1996–2025 The Papers authors"));
+            about.set_copyright(&gettext("© 1996–2025 The Papers authors\n© 2025–2026 Bernhard Emhofer"));
             about.set_translator_credits(&gettext("translator-credits"));
 
             let adw_version = format!(
@@ -428,7 +428,7 @@ mod imp {
             // The customizable set, and its refresh when the map changes. The
             // settings object must outlive the subscription, so it is leaked
             // into the closure - one per process, for the process lifetime.
-            let settings = gio::Settings::new("org.gnome.Papers");
+            let settings = gio::Settings::new("io.github.emhoferb.Tabs");
 
             crate::shortcuts::apply_app_accels(&*obj, &settings);
 
@@ -455,7 +455,7 @@ mod imp {
                 return;
             };
 
-            let settings = gio::Settings::new("org.gnome.Papers");
+            let settings = gio::Settings::new("io.github.emhoferb.Tabs");
             let section = adw::ShortcutsSection::new(Some(&gettext("Tabs and View")));
 
             for e in crate::shortcuts::ENTRIES {

@@ -1,5 +1,5 @@
 {
-    "app-id": "org.gnome.Papers.Devel",
+    "app-id": "io.github.emhoferb.Tabs",
     "runtime": "org.gnome.Platform",
     "runtime-version": "50",
     "sdk": "org.gnome.Sdk",
@@ -7,9 +7,6 @@
         "org.freedesktop.Sdk.Extension.rust-stable"
     ],
     "command": "tabspdf",
-    "tags": [
-        "devel"
-    ],
     "copy-icon": true,
     "finish-args": [
         "--share=ipc",
@@ -138,7 +135,6 @@
                 "-Ddocumentation=false",
                 "-Dintrospection=disabled",
                 "-Duser_doc=true",
-                "-Dprofile=devel",
                 "-Dtests=false",
                 "--libdir=/app/lib"
             ],

@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <schemalist>
 
-  <enum id="org.gnome.Papers.SizingMode">
+  <enum id="io.github.emhoferb.Tabs.SizingMode">
     <value nick="fit-page" value="0"/>
     <value nick="fit-width" value="1"/>
     <value nick="free" value="2"/>
     <value nick="automatic" value="3"/>
   </enum>
 
-  <schema id="org.gnome.Papers" path="/org/gnome/papers/" gettext-domain="papers">
+  <schema id="io.github.emhoferb.Tabs" path="/io/github/emhoferb/Tabs/" gettext-domain="papers">
     <key name="override-restrictions" type="b">
       <default>true</default>
       <summary>Override document restrictions</summary>
@@ -96,10 +96,10 @@
       <default>true</default>
       <summary>Show the floating zoom and annotation controls over the document.</summary>
     </key>
-    <child name="default" schema="org.gnome.Papers.Default"/>
+    <child name="default" schema="io.github.emhoferb.Tabs.Default"/>
   </schema>
 
-  <schema id="org.gnome.Papers.Default" path="/org/gnome/papers/default/" gettext-domain="papers">
+  <schema id="io.github.emhoferb.Tabs.Default" path="/io/github/emhoferb/Tabs/default/" gettext-domain="papers">
     <key name="enable-spellchecking" type="b">
       <default>true</default>
       <summary>Check spelling when writing annotation notes or filling text forms.</summary>
@@ -114,7 +114,7 @@
     <key name="window-height" type="i">
       <default>1280</default>
     </key>
-    <key name="sizing-mode" enum="org.gnome.Papers.SizingMode">
+    <key name="sizing-mode" enum="io.github.emhoferb.Tabs.SizingMode">
       <default>'automatic'</default>
     </key>
     <key name="zoom" type="d">

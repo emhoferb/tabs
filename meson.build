@@ -19,7 +19,7 @@ else
   profile = ''
   object_profile = ''
 endif
-app_id = 'org.gnome.Papers@0@'.format(profile)
+app_id = 'io.github.emhoferb.Tabs@0@'.format(profile)
 
 pps_name = meson.project_name().to_lower()
 
@@ -67,7 +67,7 @@ pps_backends_binary_version = pps_document_current
 pps_backends_subdir = join_paths(pps_name, pps_backends_binary_version.to_string(), 'backends')
 pps_backendsdir = join_paths(pps_libdir, pps_backends_subdir)
 
-pps_namespace = 'org.gnome.Papers'
+pps_namespace = 'io.github.emhoferb.Tabs'
 
 pps_code_prefix = 'Pps'
 
