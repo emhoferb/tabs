@@ -342,7 +342,7 @@ mod imp {
                 .map(|w| gtk::prelude::WidgetExt::display(&w).app_launch_context());
             glib::spawn_future_local(async move {
                 if let Err(e) =
-                    gio::AppInfo::launch_default_for_uri_future("help:papers", context.as_ref())
+                    crate::uri_launcher::launch("help:papers", context.as_ref())
                         .await
                 {
                     log::error!("Failed to launch help: {}", e.message());

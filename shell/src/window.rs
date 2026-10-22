@@ -1665,7 +1665,7 @@ mod imp {
                 self,
                 async move {
                     if let Err(e) =
-                        gio::AppInfo::launch_default_for_uri_future(&uri, Some(&context)).await
+                        crate::uri_launcher::launch(&uri, Some(&context)).await
                     {
                         obj.error_message(Some(&e), &gettext("Unable to open external link"));
                     }

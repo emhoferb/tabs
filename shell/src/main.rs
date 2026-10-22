@@ -38,6 +38,7 @@ mod sidebar_page;
 mod sidebar_thumbnails;
 mod simple_color_swatch;
 mod thumbnail_item;
+mod uri_launcher;
 mod window;
 
 use deps::*;
