@@ -6,7 +6,7 @@
   <launchable type="desktop-id">@APP_ID@.desktop</launchable>
   <metadata_license>GPL-2.0+ or GFDL-1.3-only</metadata_license>
   <project_license>GPL-2.0-or-later</project_license>
-  <name>Document Viewer</name>
+  <name>Tabs</name>
   <summary>Read documents</summary>
   <description>
     <p>A document viewer for the GNOME desktop. You can view, search or annotate documents in many different formats.</p>

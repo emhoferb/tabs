@@ -202,8 +202,8 @@ impl imp::PpsDocumentView {
                 title_widget.set_title(&display_name);
             }
         } else {
-            window.set_title(Some(&gettext("Papers")));
-            title_widget.set_title(&gettext("Papers"));
+            window.set_title(Some(&gettext("Tabs")));
+            title_widget.set_title(&gettext("Tabs"));
         }
     }
 

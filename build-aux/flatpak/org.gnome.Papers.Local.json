@@ -6,7 +6,7 @@
     "sdk-extensions": [
         "org.freedesktop.Sdk.Extension.rust-stable"
     ],
-    "command": "papers",
+    "command": "tabspdf",
     "tags": [
         "devel"
     ],

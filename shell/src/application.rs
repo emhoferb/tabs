@@ -44,7 +44,7 @@ mod imp {
             papers_document::init();
 
             // Manually set name and icon
-            glib::set_application_name(&gettext("Document Viewer"));
+            glib::set_application_name(&gettext("Tabs"));
             gtk::Window::set_default_icon_name(APP_ID);
 
             self.setup_actions();
@@ -70,7 +70,7 @@ mod imp {
             if options.contains("version") {
                 glib::g_print!(
                     "{} {}\n",
-                    gettext("Papers Document Viewer"),
+                    gettext("Tabs"),
                     crate::config::VERSION
                 );
                 return ControlFlow::Break(glib::ExitCode::SUCCESS);
@@ -297,7 +297,7 @@ mod imp {
             }
 
             let debug_info = format!(
-                "Document Viewer ({GIT_COMMIT_ID})\n\n\
+                "Tabs ({GIT_COMMIT_ID})\n\n\
                 *Distribution: {distribution}\n\
                 *Desktop: {desktop_env}\n\
                 *Packaging: {packaging_format}\n\
@@ -516,7 +516,7 @@ mod imp {
 
             let obj = self.obj();
 
-            obj.set_option_context_parameter_string(Some(&gettext("Document Viewer")));
+            obj.set_option_context_parameter_string(Some(&gettext("Tabs")));
 
             obj.add_main_option(
                 "page-label",

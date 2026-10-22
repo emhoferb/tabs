@@ -45,7 +45,9 @@ custom_target(
   build_always_stale: true,
   install: true,
   install_dir: get_option('bindir'),
-  output: meson.project_name(),
+  # Installed as tabspdf: "papers" would shadow a distribution's Papers on
+  # PATH, and "tabs" is already the terminal tab-stop utility.
+  output: 'tabspdf',
   command: [
     'cp',
     meson.current_build_dir() / rust_target / meson.project_name(),

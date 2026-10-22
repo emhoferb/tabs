@@ -433,7 +433,7 @@ mod imp {
             };
             let secondary_text_command =
                 gettext("If you reload the document, changes will be permanently lost.");
-            let text = gettext("File changed outside Document Viewer. Reload document?");
+            let text = gettext("File changed outside Tabs. Reload document?");
 
             let dialog = adw::AlertDialog::builder()
                 .body(format!("{secondary_text} {secondary_text_command}"))

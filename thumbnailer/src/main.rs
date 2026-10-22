@@ -10,7 +10,7 @@ use papers_document::RenderAnnotsFlags;
 use gettextrs::{setlocale, LocaleCategory};
 
 const USAGE: &str = "Usage:
-  papers-thumbnailer [OPTION…] <input> <output> - GNOME Document Thumbnailer
+  tabspdf-thumbnailer [OPTION…] <input> <output> - GNOME Document Thumbnailer
 
 Help Options:
   -h, --help              Show help options

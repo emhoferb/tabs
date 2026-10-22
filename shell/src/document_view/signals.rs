@@ -335,7 +335,7 @@ impl imp::PpsDocumentView {
                 self.document_action_group.activate_action("save-as", None)
             }
             _ => {
-                glib::g_warning!("", "Unimplemented named action: {}, please post a bug report in Document Viewer Gitlab (https://gitlab.gnome.org/GNOME/papers/issues) with a testcase.", name);
+                glib::g_warning!("", "Unimplemented named action: {}, please report it with a test case.", name);
             }
         }
     }

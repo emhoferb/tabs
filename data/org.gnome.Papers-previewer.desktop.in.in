@@ -1,8 +1,8 @@
 [Desktop Entry]
 Name=Print Preview
 Comment=Preview before printing
-TryExec=papers-previewer
-Exec=papers-previewer %U
+TryExec=tabspdf-previewer
+Exec=tabspdf-previewer %U
 StartupNotify=true
 Terminal=false
 Type=Application

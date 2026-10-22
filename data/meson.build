@@ -36,7 +36,7 @@ gnome.compile_schemas(
 )
 
 # man file
-man_pages = ['papers.1', 'papers-previewer.1', 'papers-thumbnailer.1']
+man_pages = ['tabspdf.1', 'tabspdf-previewer.1', 'tabspdf-thumbnailer.1']
 foreach man_page: man_pages
   install_data(
     man_page,

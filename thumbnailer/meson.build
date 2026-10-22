@@ -1,4 +1,4 @@
-input = 'papers.thumbnailer'
+input = 'tabspdf.thumbnailer'
 
 configure_file(
   input: input + '.in',
@@ -41,7 +41,7 @@ copy = custom_target(
   build_always_stale: true,
   install: true,
   install_dir: get_option('bindir'),
-  output: meson.project_name() + '-thumbnailer',
+  output: 'tabspdf-thumbnailer',
   command: [
     'cp',
     meson.current_build_dir() / rust_target / meson.project_name()
