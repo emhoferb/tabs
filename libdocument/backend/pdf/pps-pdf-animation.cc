@@ -196,6 +196,23 @@ widget_page (PDFDoc *doc, FormWidget *widget)
 	return 0;
 }
 
+/* A string object's contents, whichever poppler this is built against:
+ * Object::getString() returned a GooString pointer until 2026 and returns a
+ * std::string now, and distributions ship both (Ubuntu 26.04 has 26.01).
+ * Overloads rather than a version check, since poppler's core headers carry
+ * no usable version macro. */
+static std::string
+string_contents (const std::string &s)
+{
+	return s;
+}
+
+static std::string
+string_contents (const GooString *s)
+{
+	return s ? s->toStr () : std::string ();
+}
+
 /* The frame rate the document asks for.
  *
  * animate writes "a<n>_fps=<value>" into the JavaScript it runs when the page
@@ -234,7 +251,7 @@ animation_fps (PDFDoc *doc, int page_num, int index)
 			std::string text;
 
 			if (js.isString ()) {
-				text = js.getString ();
+				text = string_contents (js.getString ());
 			} else if (js.isStream ()) {
 				js.getStream ()->fillString (text);
 			} else {
