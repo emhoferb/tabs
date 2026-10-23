@@ -1,6 +1,7 @@
 use crate::deps::*;
 
 use std::cell::Cell;
+use std::collections::VecDeque;
 use std::path::PathBuf;
 
 use glib::closure_local;
@@ -63,6 +64,16 @@ mod imp {
         /// The tab a load in flight is destined for, when it was opened in
         /// the background so the current document stays on screen meanwhile.
         pub(super) pending_view: RefCell<Option<PpsDocumentView>>,
+        /// Documents asked to open in new tabs while another was still
+        /// loading. A window holds one load at a time - starting a second
+        /// cancels the first - so they wait here and open one after another.
+        pub(super) queued_tabs: RefCell<
+            VecDeque<(
+                gio::File,
+                Option<papers_document::LinkDest>,
+                Option<WindowRunMode>,
+            )>,
+        >,
 
         pub(super) display_name: RefCell<String>,
         pub(super) edit_name: RefCell<String>,
@@ -170,6 +181,27 @@ mod imp {
             if let Some(path) = self.local_path.take() {
                 std::fs::remove_file(path).expect("failed to remove temp file");
             }
+        }
+
+        /// Start the next document that was waiting for a load to finish.
+        /// From an idle, since this runs inside the finished load's signal.
+        fn open_queued_tab(&self) {
+            glib::idle_add_local_once(glib::clone!(
+                #[weak(rename_to = obj)]
+                self,
+                move || {
+                    if obj.load_job.borrow().is_some() {
+                        return;
+                    }
+
+                    let Some((file, dest, mode)) = obj.queued_tabs.borrow_mut().pop_front() else {
+                        return;
+                    };
+
+                    obj.open_in_new_tab.set(true);
+                    obj.open(&file, dest.as_ref(), mode);
+                }
+            ));
         }
 
         fn clear_load_job(&self) {
@@ -1217,6 +1249,7 @@ mod imp {
                                     // The tab was closed while its document
                                     // was still loading: drop the result.
                                     obj.clear_load_job();
+                                    obj.open_queued_tab();
                                     return;
                                 }
                             }
@@ -1271,6 +1304,7 @@ mod imp {
                             }
 
                             obj.clear_load_job();
+                            obj.open_queued_tab();
                         }
                         Err(e) => {
                             glib::spawn_future_local(glib::clone!(
@@ -1326,11 +1360,13 @@ mod imp {
 
                                         obj.clear_load_job();
                                         obj.clear_local_uri();
+                                        obj.open_queued_tab();
                                     } else {
                                         obj.show_error(Some(&e));
 
                                         obj.clear_load_job();
                                         obj.clear_local_uri();
+                                        obj.open_queued_tab();
                                     }
                                 }
                             ));
@@ -1764,6 +1800,15 @@ impl PpsWindow {
         mode: Option<WindowRunMode>,
     ) {
         let imp = self.imp();
+
+        // Another document is still loading here, as when several files are
+        // opened at once: wait for it rather than cancel it.
+        if imp.load_job.borrow().is_some() {
+            imp.queued_tabs
+                .borrow_mut()
+                .push_back((file.clone(), dest.cloned(), mode));
+            return;
+        }
 
         imp.open_in_new_tab.set(true);
         imp.open(file, dest, mode);
