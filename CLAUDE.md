@@ -9,7 +9,8 @@ A fork of **GNOME Papers**, branched at tag `50.2`, on branch
 several Evince 46.3.1 ergonomics that Papers dropped. Upstream remains
 `https://gitlab.gnome.org/GNOME/papers.git`.
 
-See `FORK-PLAN.md` for why Papers rather than Evince, and `CHANGES.md` for
+Papers rather than Evince because Papers had already split the document view
+out of the window, which is what made tabs feasible. `CHANGES.md` lists
 everything implemented.
 
 ## Build and run
