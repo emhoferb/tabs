@@ -1,4 +1,4 @@
-# <img src="data/icons/128x128/apps/io.github.emhoferb.Tabs.png" width="48" alt="">Tabs
+<h1><img src="data/icons/tabs-logo.png" width="80" align="absbottom" alt="">&nbsp;&nbsp;Tabs</h1>
 
 An unofficial fork of [GNOME Papers](https://gitlab.gnome.org/GNOME/papers)
 50.2, the GNOME document viewer. It adds tabs and brings back a handful of
