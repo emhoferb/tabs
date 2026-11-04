@@ -29,28 +29,26 @@ change and every shortcut.
 
 ## Installing
 
-Download the `.flatpak` file from the
-[latest release](https://github.com/emhoferb/tabs/releases/latest) and install
-it. You need Flatpak and Flathub, which provides the GNOME runtime it runs on
-(about 1.1 GB, shared with every other GNOME app from Flathub):
+On Linux (x86_64), one command installs Tabs, puts it in your app drawer and
+adds a `tabspdf` command for the terminal:
 
 ```sh
-sudo apt install flatpak        # on Ubuntu; most other distributions ship it
-flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-flatpak install --user tabs-*.flatpak
-flatpak run io.github.emhoferb.Tabs [file.pdf]
+curl -fsSL https://raw.githubusercontent.com/emhoferb/tabs/main/install.sh | sh
 ```
 
-After installing Flatpak for the first time, log out and back in so Tabs shows
-up among your applications. The release is built for x86_64 only.
-
-To open documents with `tabspdf file.pdf` from a terminal, put this in
-`~/.local/bin/tabspdf` and make it executable:
+Run the same command again to update. To remove Tabs:
 
 ```sh
-#!/bin/sh
-exec flatpak run io.github.emhoferb.Tabs "$@"
+curl -fsSL https://raw.githubusercontent.com/emhoferb/tabs/main/install.sh | sh -s -- --uninstall
 ```
+
+Tabs runs as a [Flatpak](https://flatpak.org). If you don't have Flatpak yet,
+the script installs it (it asks for your password for that). The first install
+also downloads the GNOME runtime from Flathub, about 1 GB, which every other
+GNOME app from Flathub shares. To make Tabs your default PDF viewer, right-click
+a PDF in Files, choose Open With…, pick Tabs and turn on *Always use for this
+file type*, or run
+`xdg-mime default io.github.emhoferb.Tabs.desktop application/pdf`.
 
 ## Building
 
