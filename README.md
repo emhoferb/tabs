@@ -1,4 +1,4 @@
-# <img src="data/icons/128x128/apps/io.github.emhoferb.Tabs.png" width="48" alt=""> Tabs
+# <img src="data/icons/128x128/apps/io.github.emhoferb.Tabs.png" width="48" alt="">Tabs
 
 An unofficial fork of [GNOME Papers](https://gitlab.gnome.org/GNOME/papers)
 50.2, the GNOME document viewer. It adds tabs and brings back a handful of
@@ -6,6 +6,8 @@ Evince habits that Papers dropped.
 
 This is not a GNOME project, and GNOME has not endorsed it. Please report
 problems with it here, not on the Papers issue tracker.
+
+![Tabs with three documents open, the outline sidebar following the current section](data/screenshots/tabs.png)
 
 ## What's different
 
@@ -24,6 +26,31 @@ problems with it here, not on the Papers issue tracker.
 
 [CHANGES.md](CHANGES.md) lists everything, with the reasoning behind each
 change and every shortcut.
+
+## Installing
+
+Download the `.flatpak` file from the
+[latest release](https://github.com/emhoferb/tabs/releases/latest) and install
+it. You need Flatpak and Flathub, which provides the GNOME runtime it runs on
+(about 1.1 GB, shared with every other GNOME app from Flathub):
+
+```sh
+sudo apt install flatpak        # on Ubuntu; most other distributions ship it
+flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+flatpak install --user tabs-*.flatpak
+flatpak run io.github.emhoferb.Tabs [file.pdf]
+```
+
+After installing Flatpak for the first time, log out and back in so Tabs shows
+up among your applications. The release is built for x86_64 only.
+
+To open documents with `tabspdf file.pdf` from a terminal, put this in
+`~/.local/bin/tabspdf` and make it executable:
+
+```sh
+#!/bin/sh
+exec flatpak run io.github.emhoferb.Tabs "$@"
+```
 
 ## Building
 

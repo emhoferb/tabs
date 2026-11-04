@@ -21,6 +21,12 @@
     <control>pointing</control>
     <control>touch</control>
   </supports>
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/emhoferb/tabs/main/data/screenshots/tabs.png</image>
+      <caption>Several documents in tabs, with the outline following the current section</caption>
+    </screenshot>
+  </screenshots>
   <branding>
     <color type="primary" scheme_preference="light">#f66151</color>
     <color type="primary" scheme_preference="dark">#a51d2d</color>
