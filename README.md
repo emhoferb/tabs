@@ -1,4 +1,4 @@
-<h1><img src="data/icons/tabs-logo.png" width="80" align="absbottom" alt="">&nbsp;&nbsp;Tabs</h1>
+![Tabs – a tabbed PDF reader](data/banner-light.png)
 
 An unofficial fork of [GNOME Papers](https://gitlab.gnome.org/GNOME/papers)
 50.2, the GNOME document viewer. It adds tabs and brings back a handful of
